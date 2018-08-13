@@ -104,11 +104,22 @@ struct ip_vs_ca_iphdr {
 static inline void
 ip_vs_ca_fill_iphdr(int af, const void *nh, struct ip_vs_ca_iphdr *iphdr)
 {
-	const struct iphdr *iph = nh;
-	iphdr->len = iph->ihl * 4;
-	iphdr->protocol = iph->protocol;
-	iphdr->saddr.ip = iph->saddr;
-	iphdr->daddr.ip = iph->daddr;
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (af == AF_INET6) {
+        const struct ipv6hdr *iph = nh;
+        iphdr->len = sizeof(struct ipv6hdr);
+        iphdr->protocol = iph->nexthdr;
+        ipv6_addr_copy(&iphdr->saddr.in6, &iph->saddr);
+        ipv6_addr_copy(&iphdr->daddr.in6, &iph->daddr);
+    } else
+#endif
+    {
+	    const struct iphdr *iph = nh;
+	    iphdr->len = iph->ihl * 4;
+	    iphdr->protocol = iph->protocol;
+	    iphdr->saddr.ip = iph->saddr;
+	    iphdr->daddr.ip = iph->daddr;
+    }
 }
 
 
@@ -149,6 +160,21 @@ struct ip_vs_tcpo_addr {
 } __attribute__((__packed__));
 
 
+#ifdef CONFIG_IP_VS_CA_IPV6
+#define TCPOPT_ADDR_V6 253
+#define TCPOLEN_ADDR_V6 20 /* |opcode|size|port|ipv6 = 1 + 1 + 2 + 16 */
+
+/*
+ * insert client ip in tcp option, for ipv6 must be 4 bytes alignment
+ */
+struct ip_vs_tcpo_addr_v6 {
+    __u8 opcode;
+    __u8 opsize;
+    __be16 port;
+    struct in6_addr addr;
+}
+#endif
+
 struct ipvs_ca {
 	__u8 code;			/* magic code */
 	__u8 protocol;		/* Which protocol (TCP/UDP) */
@@ -157,10 +183,31 @@ struct ipvs_ca {
 	struct ip_vs_tcpo_addr toa;
 } __attribute__((__packed__));
 
+#ifdef CONFIG_IP_VS_CA_IPV6
+
+struct ipvs_ca_v6 {
+    __u8 code;
+    __u8 protocol;
+    __be16 sport;
+    __be16 dport;
+    struct ip_vs_tcpo_addr_v6 toa;
+}
+
+#endif
+
 union ip_vs_ca_data {
 	__u64 data;
 	struct ip_vs_tcpo_addr tcp;
 };
+
+#ifdef CONFIG_IP_VS_CA_IPV6
+
+union ip_vs_ca_data_v6 {
+    __u160 data;
+    struct ip_vs_tcpo_addr_v6 tcp;
+}
+
+#endif
 
 /* statistics about toa in proc /proc/net/ip_vs_ca_stat */
 enum {
