@@ -172,7 +172,7 @@ struct ip_vs_tcpo_addr_v6 {
     __u8 opsize;
     __be16 port;
     struct in6_addr addr;
-}
+} __attribute__((__packed__));
 #endif
 
 struct ipvs_ca {
@@ -191,7 +191,7 @@ struct ipvs_ca_v6 {
     __be16 sport;
     __be16 dport;
     struct ip_vs_tcpo_addr_v6 toa;
-}
+} __attribute__((__packed__));
 
 #endif
 
@@ -205,7 +205,7 @@ union ip_vs_ca_data {
 union ip_vs_ca_data_v6 {
     __u160 data;
     struct ip_vs_tcpo_addr_v6 tcp;
-}
+};
 
 #endif
 
