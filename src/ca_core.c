@@ -50,16 +50,17 @@ ip_vs_ca_modify_uaddr(int fd, struct sockaddr *uaddr, int len, int dir)
 	union nf_inet_addr addr;
 	struct ip_vs_ca_conn *cp;
 
-    if (len != sizeof(struct sockaddr_in)){
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (len != sizeof(struct sockaddr_in) && len != sizeof(struct sockaddr_in6)) {
+#else
+    if (len != sizeof(struct sockaddr_in) {
+#endif
 		ret = -1;
 		goto out;
 	}
 #ifdef CONFIG_IP_VS_CA_IPV6
-    else if (len != sizeof(struct sockaddr_in6)) {
-        ret = -61;
-        goto out;
-    }
-    v6_flag = 1;
+    else if (len == sizeof(struct sockaddr_in6))
+        v6_flag = 1;
 #endif
 
 #ifdef CONFIG_IP_VS_CA_IPV6
