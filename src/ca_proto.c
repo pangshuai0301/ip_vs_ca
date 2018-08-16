@@ -48,20 +48,20 @@ static struct ip_vs_ca_conn *tcpudp_conn_get(int af, const struct sk_buff *skb,
 static int tcpudp_icmp_process(int af, struct sk_buff *skb,
 		struct ip_vs_ca_protocol *pp,
 		const struct ip_vs_ca_iphdr *iph,
-		struct icmphdr *icmph, struct ipvs_ca *ca,
+		struct ipvs_ca *ca,
 		int *verdict, struct ip_vs_ca_conn **cpp)
 {
 
 	IP_VS_CA_INC_STATS(ext_stats, SYN_RECV_SOCK_IP_VS_CA_CNT);
 	//create cp
-	*cpp = ip_vs_ca_conn_new(af, pp, 
-			iph->saddr.ip , ca->sport, 
-			iph->daddr.ip, ca->dport, 
-			ca->toa.addr, ca->toa.port,
+	*cpp = ip_vs_ca_conn_new(af, pp,
+			&iph->saddr, ca->sport,
+			&iph->daddr, ca->dport,
+			ca->toa.addr, ca->toa.port, // __u32 toa.addr ????
 			skb);
 	if (*cpp == NULL){
 		goto out;
-	} 
+	}
 
 	ip_vs_ca_conn_put(*cpp);
 	*verdict = NF_ACCEPT;
@@ -72,6 +72,36 @@ out:
 	*verdict = NF_ACCEPT;
 	return 1;
 }
+
+#ifdef CONFIG_IP_VS_CA_IPV6
+static int tcpudp_icmp_process_v6(int af, struct sk_buff *skb,
+		struct ip_vs_ca_protocol *pp,
+		const struct ip_vs_ca_iphdr *iph,
+		struct ipvs_ca_v6 *ca,
+		int *verdict, struct ip_vs_ca_conn **cpp)
+{
+
+	IP_VS_CA_INC_STATS(ext_stats, SYN_RECV_SOCK_IP_VS_CA_CNT);
+	//create cp
+	*cpp = ip_vs_ca_conn_new(af, pp,
+			&iph->saddr, ca->sport,
+			&iph->daddr, ca->dport,
+			&ca->toa.addr, ca->toa.port,
+			skb);
+	if (*cpp == NULL){
+		goto out;
+	}
+
+	ip_vs_ca_conn_put(*cpp);
+	*verdict = NF_ACCEPT;
+	return 0;
+
+out:
+	*cpp = NULL;
+	*verdict = NF_ACCEPT;
+	return 1;
+}
+#endif
 /*
  * #################### tcp ##################
  */
@@ -130,6 +160,54 @@ static __u64 get_ip_vs_ca_data(struct tcphdr *th)
 	return 0;
 }
 
+#ifdef CONFIG_IP_VS_CA_IPV6
+static union ip_vs_ca_data_v6 *  get_ip_vs_ca_data_v6(struct sk_buff *skb) {
+    struct tcphdr *th;
+    int length;
+    unsigned char *ptr;
+
+    union ip_vs_ca_data_v6 tdata_v6;
+
+    //void *ret_ptr = NULL;
+
+    if (NULL != skb) {
+        th = tcp_hdr(skb);
+
+        /* get option length */
+        length = (th->doff * 4) - sizeof(struct tcphdr);
+
+        /* ptr point to tcp options */
+        ptr = (unsigned char *) (th + 1);
+
+        while (length > 0) {
+            int opcode = *ptr++;
+            int opsize;
+            switch (opcode) {
+                case TCPOPT_EOL:
+                    return NULL;
+                case TCPOPT_NOP:
+                    length--;
+                    continue;
+                default:
+                    opsize = *ptr++;
+                    if (opsize < 2)
+                        return NULL;
+                    if (opsize > length)
+                        return NULL;
+                    if (tcpopt_addr == opcode && TCPOLEN_ADDR_V6 == opsize) {
+                        memcpy(&tdata_v6.data, ptr - 2, sizeof(tdata_v6));
+                        //memcpy(&ret_ptr, &tdata, sizeof(ret_ptr));
+                        //return ret_ptr;
+                        return &tdata_v6;
+                    }
+                    ptr += opsize - 2;
+                    length -= opsize;
+            }
+        }
+    }
+    return NULL;
+}
+#endif
 
 static int
 tcp_skb_process(int af, struct sk_buff *skb, struct ip_vs_ca_protocol *pp,
@@ -138,6 +216,9 @@ tcp_skb_process(int af, struct sk_buff *skb, struct ip_vs_ca_protocol *pp,
 {
 	struct tcphdr _tcph, *th;
 	union ip_vs_ca_data tdata = {.data = 0};
+#ifdef CONFIG_IP_VS_CA_IPV6
+    union ip_vs_ca_data_v6 * tdata_v6 = NULL;
+#endif
 
 	th = skb_header_pointer(skb, iph->len, sizeof(_tcph), &_tcph);
 	if (th == NULL) {
@@ -148,22 +229,46 @@ tcp_skb_process(int af, struct sk_buff *skb, struct ip_vs_ca_protocol *pp,
 		goto out;
 	}
 
-	if ((tdata.data = get_ip_vs_ca_data(th)) != 0){
-		IP_VS_CA_INC_STATS(ext_stats, SYN_RECV_SOCK_IP_VS_CA_CNT);
-		//create cp
-		*cpp = ip_vs_ca_conn_new(af, pp, 
-				iph->saddr.ip , th->source, 
-				iph->daddr.ip, th->dest, 
-				tdata.tcp.addr, tdata.tcp.port,
-				skb);
-		if (*cpp == NULL){
-			goto out;
-		}
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (af == AF_INET6) {
+        tdata_v6 = get_ip_vs_ca_data_v6(skb); // ??? return the addr is ok?
+        if (tdata_v6->data != 0) {
+		    IP_VS_CA_INC_STATS(ext_stats, SYN_RECV_SOCK_IP_VS_CA_CNT);
+		    //create cp
+		    *cpp = ip_vs_ca_conn_new(af, pp,
+		    		&iph->saddr , th->source,
+		    		&iph->daddr, th->dest,
+		    		&tdata_v6->tcp.addr, tdata_v6->tcp.port,
+		    		skb);
+		    if (*cpp == NULL){
+		    	goto out;
+		    }
 
-		ip_vs_ca_conn_put(*cpp);
-		*verdict = NF_ACCEPT;
-		return 0;
-	}
+		    ip_vs_ca_conn_put(*cpp);
+		    *verdict = NF_ACCEPT;
+		    return 0;
+        }
+    } else
+#endif
+    {
+        tdata.data = get_ip_vs_ca_data(th);
+	    if (tdata.data != 0){
+	    	IP_VS_CA_INC_STATS(ext_stats, SYN_RECV_SOCK_IP_VS_CA_CNT);
+	    	//create cp
+	    	*cpp = ip_vs_ca_conn_new(af, pp,
+	    			&iph->saddr , th->source,
+	    			&iph->daddr, th->dest,
+	    			tdata.tcp.addr, tdata.tcp.port, // __u32 tdata.tcp.addr ???????
+	    			skb);
+	    	if (*cpp == NULL){
+	    		goto out;
+	    	}
+
+	    	ip_vs_ca_conn_put(*cpp);
+	    	*verdict = NF_ACCEPT;
+	    	return 0;
+	    }
+    }
 
 	IP_VS_CA_INC_STATS(ext_stats, SYN_RECV_SOCK_NO_IP_VS_CA_CNT);
 	goto out;
@@ -180,6 +285,9 @@ struct ip_vs_ca_protocol ip_vs_ca_protocol_tcp = {
 	.protocol = IPPROTO_TCP,
 	.skb_process = tcp_skb_process,
 	.icmp_process = tcpudp_icmp_process,
+#ifdef CONFIG_IP_VS_CA_IPV6
+    .icmp_process_v6 = tcpudp_icmp_process_v6,
+#endif
 	.conn_get = tcpudp_conn_get,
 	.timeout = &sysctl_ip_vs_ca_timeouts[IP_VS_CA_S_TCP],
 };
@@ -207,6 +315,9 @@ struct ip_vs_ca_protocol ip_vs_ca_protocol_udp = {
 	.protocol = IPPROTO_UDP,
 	.skb_process = udp_skb_process,
 	.icmp_process = tcpudp_icmp_process,
+#ifdef CONFIG_IP_VS_CA_IPV6
+    .icmp_process_v6 = tcpudp_icmp_process_v6,
+#endif
 	.conn_get = tcpudp_conn_get,
 	.timeout = &sysctl_ip_vs_ca_timeouts[IP_VS_CA_S_UDP],
 };

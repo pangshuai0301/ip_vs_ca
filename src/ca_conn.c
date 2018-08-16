@@ -53,9 +53,18 @@ static inline void ct_unlock(unsigned key)
 /*
  *	Returns hash value for IPVS connection entry
  */
-static unsigned int ip_vs_ca_conn_hashkey(int af, unsigned proto, 
+static unsigned int ip_vs_ca_conn_hashkey(int af, unsigned proto,
 		const union nf_inet_addr *addr, __be16 port)
 {
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (af == AF_INET6)
+        return jhash_3words(
+                    jhash(addr, 16, ip_vs_ca_conn_rnd),
+                    (__force u32) port,
+                    proto,
+                    ip_vs_ca_conn_rnd)
+            & IP_VS_CA_CONN_TAB_MASK;
+#endif
 	return jhash_3words((__force u32) addr->ip, (__force u32) port, proto,
 			    ip_vs_ca_conn_rnd)
 	    & IP_VS_CA_CONN_TAB_MASK;
@@ -218,7 +227,7 @@ static void ip_vs_ca_conn_expire(unsigned long data)
 		/* delete the timer if it is activated by other users */
 		if (timer_pending(&cp->timer))
 			del_timer(&cp->timer);
-		
+
 		atomic_dec(&ip_vs_ca_conn_count);
 		IP_VS_CA_INC_STATS(ext_stats, CONN_DEL_CNT);
 
@@ -243,9 +252,12 @@ expire_later:
 
 struct ip_vs_ca_conn *ip_vs_ca_conn_new(int af,
 					struct ip_vs_ca_protocol *pp,
-					__be32 saddr, __be16 sport,
-					__be32 daddr, __be16 dport,
-					__be32 caddr, __be16 cport,
+					//__be32 saddr, __be16 sport,
+					//__be32 daddr, __be16 dport,
+					//__be32 caddr, __be16 cport,
+					const union nf_inet_addr *saddr, __be16 sport,
+					const union nf_inet_addr *daddr, __be16 dport,
+					const union nf_inet_addr *caddr, __be16 cport,
 					struct sk_buff *skb)
 {
 	struct ip_vs_ca_conn *cp;
@@ -263,14 +275,17 @@ struct ip_vs_ca_conn *ip_vs_ca_conn_new(int af,
 	setup_timer(&cp->timer, ip_vs_ca_conn_expire, (unsigned long)cp);
 	cp->af = af;
 	cp->protocol = pp->protocol;
-	//ip_vs_ca_addr_copy(af, &cp->saddr, saddr);
-	cp->s_addr.ip = saddr;
+
+	ip_vs_ca_addr_copy(af, &cp->s_addr, saddr);
+	//cp->s_addr.ip = saddr;
 	cp->s_port = sport;
-	//ip_vs_ca_addr_copy(af, &cp->caddr, caddr);
-	cp->c_addr.ip = caddr;
+
+	ip_vs_ca_addr_copy(af, &cp->c_addr, caddr);
+	//cp->c_addr.ip = caddr;
 	cp->c_port = cport;
-	//ip_vs_ca_addr_copy(proto == IPPROTO_IP ? AF_UNSPEC : af, &cp->daddr, daddr);
-	cp->d_addr.ip = daddr;
+
+	ip_vs_ca_addr_copy(af, &cp->d_addr, daddr);
+	//cp->d_addr.ip = daddr;
 	cp->d_port = dport;
 
 	cp->flags = 0;
@@ -285,11 +300,20 @@ struct ip_vs_ca_conn *ip_vs_ca_conn_new(int af,
 
 	ip_vs_ca_conn_hash(cp);
 
-	IP_VS_CA_DBG("conn new: proto:%u, %pI4:%d(%pI4:%d) -> %pI4:%d\n",
-			cp->protocol,
-			&cp->s_addr.ip, ntohs(cp->s_port),
-			&cp->c_addr.ip, ntohs(cp->c_port),
-			&cp->d_addr.ip, ntohs(cp->d_port));
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (af == AF_INET6)
+	    IP_VS_CA_DBG("conn new: proto:%u, %pI16:%d(%pI16:%d) -> %pI16:%d\n",
+	    		cp->protocol,
+	    		&cp->s_addr.ip6, ntohs(cp->s_port),
+	    		&cp->c_addr.ip6, ntohs(cp->c_port),
+	    		&cp->d_addr.ip6, ntohs(cp->d_port));
+    else
+#endif
+	    IP_VS_CA_DBG("conn new: proto:%u, %pI4:%d(%pI4:%d) -> %pI4:%d\n",
+	    		cp->protocol,
+	    		&cp->s_addr.ip, ntohs(cp->s_port),
+	    		&cp->c_addr.ip, ntohs(cp->c_port),
+	    		&cp->d_addr.ip, ntohs(cp->d_port));
 	//LeaveFunction();
 	return cp;
 }

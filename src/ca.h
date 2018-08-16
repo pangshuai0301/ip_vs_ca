@@ -70,7 +70,16 @@ struct ip_vs_ca_conn;
 struct ip_vs_ca_iphdr;
 struct ip_vs_ca_conn;
 
-/*
+/* kernel 2.6 net/ipv6.h obtain
+ * kernel 3.18 not hava
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
+static inline void ipv6_addr_copy(struct in6_addr *a1, const struct in6_addr *a2)
+{
+    memcpy(a1, a2, sizeof(struct in6_addr));
+}
+#endif
+
 static inline void ip_vs_ca_addr_copy(int af, union nf_inet_addr *dst,
 				   const union nf_inet_addr *src)
 {
@@ -81,7 +90,6 @@ static inline void ip_vs_ca_addr_copy(int af, union nf_inet_addr *dst,
 #endif
 		dst->ip = src->ip;
 }
-*/
 
 
 static inline int ip_vs_ca_addr_equal(int af, const union nf_inet_addr *a,
@@ -93,6 +101,17 @@ static inline int ip_vs_ca_addr_equal(int af, const union nf_inet_addr *a,
 #endif
 	return a->ip == b->ip;
 }
+
+/*
+ * note:
+ * union nf_inet_addr {
+ *     __u32    all[4];
+ *     __be32   ip;
+ *     __be32   ip6[4];
+ *     struct in_addr   in;
+ *     struct in6_addr  in6;
+ * };
+ */
 
 struct ip_vs_ca_iphdr {
 	int len;
@@ -161,7 +180,7 @@ struct ip_vs_tcpo_addr {
 
 
 #ifdef CONFIG_IP_VS_CA_IPV6
-#define TCPOPT_ADDR_V6 253
+//#define TCPOPT_ADDR_V6 253 /* tcpopt_addr */
 #define TCPOLEN_ADDR_V6 20 /* |opcode|size|port|ipv6 = 1 + 1 + 2 + 16 */
 
 /*
@@ -171,7 +190,7 @@ struct ip_vs_tcpo_addr_v6 {
     __u8 opcode;
     __u8 opsize;
     __be16 port;
-    struct in6_addr addr;
+    union nf_inet_addr addr;
 } __attribute__((__packed__));
 #endif
 
@@ -184,7 +203,6 @@ struct ipvs_ca {
 } __attribute__((__packed__));
 
 #ifdef CONFIG_IP_VS_CA_IPV6
-
 struct ipvs_ca_v6 {
     __u8 code;
     __u8 protocol;
@@ -192,7 +210,6 @@ struct ipvs_ca_v6 {
     __be16 dport;
     struct ip_vs_tcpo_addr_v6 toa;
 } __attribute__((__packed__));
-
 #endif
 
 union ip_vs_ca_data {
@@ -201,12 +218,10 @@ union ip_vs_ca_data {
 };
 
 #ifdef CONFIG_IP_VS_CA_IPV6
-
 union ip_vs_ca_data_v6 {
-    __u160 data;
+    unsigned int *data[160]; /* !!! 20 * 8 bits */
     struct ip_vs_tcpo_addr_v6 tcp;
 };
-
 #endif
 
 /* statistics about toa in proc /proc/net/ip_vs_ca_stat */
@@ -280,8 +295,16 @@ struct ip_vs_ca_protocol {
 	int (*icmp_process) (int af, struct sk_buff * skb,
 			      struct ip_vs_ca_protocol * pp,
 			      const struct ip_vs_ca_iphdr * iph,
-				  struct icmphdr *icmph, struct ipvs_ca *ca,
+				  struct ipvs_ca *ca,
 			      int *verdict, struct ip_vs_ca_conn ** cpp);
+
+#ifdef CONFIG_IP_VS_CA_IPV6
+	int (*icmp_process_v6) (int af, struct sk_buff * skb,
+			      struct ip_vs_ca_protocol * pp,
+			      const struct ip_vs_ca_iphdr * iph,
+				  struct ipvs_ca_v6 *ca,
+			      int *verdict, struct ip_vs_ca_conn ** cpp);
+#endif
 
 	struct ip_vs_ca_conn *
 	    (*conn_get) (int af, const struct sk_buff * skb,
@@ -304,9 +327,12 @@ extern struct ip_vs_ca_conn *ip_vs_ca_conn_get(int af, __u8 protocol,
 	 const union nf_inet_addr *s_addr, __be16 s_port, int dir);
 struct ip_vs_ca_conn *ip_vs_ca_conn_new(int af,
 					struct ip_vs_ca_protocol *pp,
-					__be32 saddr, __be16 sport,
-					__be32 daddr, __be16 dport,
-					__be32 oaddr, __be16 oport,
+					//__be32 saddr, __be16 sport,
+					//__be32 daddr, __be16 dport,
+					//__be32 oaddr, __be16 oport,
+                    const union nf_inet_addr *saddr, __be16 sport,
+                    const union nf_inet_addr *daddr, __be16 dport,
+                    const union nf_inet_addr *caddr, __be16 cport,
 					struct sk_buff *skb);
 
 extern int ip_vs_ca_protocol_init(void);
