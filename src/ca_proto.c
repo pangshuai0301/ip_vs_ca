@@ -52,12 +52,15 @@ static int tcpudp_icmp_process(int af, struct sk_buff *skb,
 		int *verdict, struct ip_vs_ca_conn **cpp)
 {
 
+    union nf_inet_addr caddr;
+
 	IP_VS_CA_INC_STATS(ext_stats, SYN_RECV_SOCK_IP_VS_CA_CNT);
 	//create cp
+    caddr.ip = ca->toa.addr;
 	*cpp = ip_vs_ca_conn_new(af, pp,
 			&iph->saddr, ca->sport,
 			&iph->daddr, ca->dport,
-			ca->toa.addr, ca->toa.port, // __u32 toa.addr ????
+			&caddr, ca->toa.port,
 			skb);
 	if (*cpp == NULL){
 		goto out;
@@ -251,14 +254,16 @@ tcp_skb_process(int af, struct sk_buff *skb, struct ip_vs_ca_protocol *pp,
     } else
 #endif
     {
+        union nf_inet_addr caddr;
         tdata.data = get_ip_vs_ca_data(th);
+        caddr.ip = tdata.tcp.addr;
 	    if (tdata.data != 0){
 	    	IP_VS_CA_INC_STATS(ext_stats, SYN_RECV_SOCK_IP_VS_CA_CNT);
 	    	//create cp
 	    	*cpp = ip_vs_ca_conn_new(af, pp,
 	    			&iph->saddr , th->source,
 	    			&iph->daddr, th->dest,
-	    			tdata.tcp.addr, tdata.tcp.port, // __u32 tdata.tcp.addr ???????
+	    			&caddr, tdata.tcp.port,
 	    			skb);
 	    	if (*cpp == NULL){
 	    		goto out;
