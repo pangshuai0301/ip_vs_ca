@@ -10,6 +10,13 @@
 #include <linux/delay.h>
 #include <linux/file.h>
 #include <asm/paravirt.h>
+#include <linux/netfilter.h>
+
+#ifdef CONFIG_IP_VS_CA_IPV6
+#include <net/ipv6.h>
+#include <linux/netfilter_ipv6.h>
+#include <linux/ipv6.h>
+#endif
 #include "ca.h"
 
 
@@ -34,23 +41,31 @@ static void
 ip_vs_ca_modify_uaddr(int fd, struct sockaddr *uaddr, int len, int dir)
 {
 	int err, ret = 0;
+int err1 = 0;
 	struct socket *sock = NULL;
-	struct sockaddr_in sin;
+	struct sockaddr_storage sin;
+struct sockaddr sin_1;
 	union nf_inet_addr addr;
 	struct ip_vs_ca_conn *cp;
 
-	if (len != sizeof(struct sockaddr_in)){
-		ret = -1;
-		goto out;
-	}
+    //memset(&sin, 0, sizeof(struct sockaddr_storage));
 
-	err = copy_from_user(&sin, uaddr, len);
+err1 = copy_from_user(&sin_1, uaddr, len);
+
+	err = copy_from_user(&sin, (struct sockaddr_storage *)uaddr, len);
+
 	if (err){
 		ret = -2;
 		goto out;
 	}
 
-	if (sin.sin_family != AF_INET){
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (sin.ss_family != AF_INET && sin.ss_family != AF_INET6) {
+#else
+    if (sin.ss_family != AF_INET) {
+#endif
+        IP_VS_CA_DBG("ss_family:%d, sa_family:%d, AF_INET:%d, AF_INET6:%d\n",
+                sin.ss_family, sin_1.sa_family, AF_INET, AF_INET6);
 		ret = -3;
 		goto out;
 	}
@@ -61,48 +76,153 @@ ip_vs_ca_modify_uaddr(int fd, struct sockaddr *uaddr, int len, int dir)
 		goto out;
 	}
 
-	IP_VS_CA_DBG("%s called, sin{.family:%d, .port:%d, addr:%pI4} sock.type:%d\n",
-			__func__, sin.sin_family, ntohs(sin.sin_port),
-			&sin.sin_addr.s_addr, sock->type);
+    /*
+     * note:
+     * struct sockaddr_in
+     * {
+     *     sa_family_t          sin_family;      // address family
+     *     uint16_t             sin_port;        // tcp/udp port(16 bits)
+     *     struct in_addr       sin_addr;        // ip addr (32 bits)
+     *     char                 sin_zero[8];     // Pad to size of `struct sockaddr'
+     * }
+     * struct sockaddr_in6
+     * {
+     *     unsigned short int   sin6_family;     // AF_INET6
+     *     __be16               sin6_port;       // Transport layer port #
+     *     __be32               sin6_flowinfo;   // IPv6 flow information
+     *     struct in6_addr      sin6_addr;       // IPv6 address
+     *     __u32                sin6_scope_id;   // scope id (new in RFC2553)
+     * };
+     * union nf_inet_addr {
+     *     __u32    all[4];
+     *     __be32   ip;
+     *     __be32   ip6[4];
+     *     struct in_addr   in;
+     *     struct in6_addr  in6;
+     * };
+     * struct in_addr {
+     *         __be32  s_addr;
+     * };
+     * struct in6_addr {
+     *         union {
+     *                 __u8            u6_addr8[16];
+     * #if __UAPI_DEF_IN6_ADDR_ALT
+     *                 __be16          u6_addr16[8];
+     *                 __be32          u6_addr32[4];
+     * #endif
+     *         } in6_u;
+     * #define s6_addr                 in6_u.u6_addr8
+     * #if __UAPI_DEF_IN6_ADDR_ALT
+     * #define s6_addr16               in6_u.u6_addr16
+     * #define s6_addr32               in6_u.u6_addr32
+     * #endif
+     * };
+     */
 
-	addr.ip = sin.sin_addr.s_addr;
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (sin.ss_family == AF_INET6)
+        IP_VS_CA_DBG("%s called, sin6{.family:%d, .port:%d, addr6:%pI6} sock.type:%d\n",
+                __func__, sin.ss_family, ntohs(IP_VS_CA_GET_PORT_V6(sin)),
+                &IP_VS_CA_GET_IP_V6(sin), sock->type);
+    else
+#endif
+        IP_VS_CA_DBG("%s called, sin{.family:%d, .port:%d, addr:%pI4} sock.type:%d\n",
+                __func__, sin.ss_family, ntohs(IP_VS_CA_GET_PORT(sin)),
+                &IP_VS_CA_GET_IP(sin), sock->type);
+
+        //addr.ip = sin.sin_addr.s_addr;
+
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (sin.ss_family == AF_INET6)
+        addr.in6 = IP_VS_CA_GET_IP_V6(sin); // ?????????
+        //ip_vs_ca_addr_copy(sin6.sin6_family, &addr, sin6.sin6_addr.s6_addr);
+    else
+#endif
+        addr.ip = IP_VS_CA_GET_IP(sin);
+        //ip_vs_ca_addr_copy(sin.sin_family, &addr, sin.sin_addr.s_addr);
 
 	if (sock->type == SOCK_STREAM){
-		cp = ip_vs_ca_conn_get(sin.sin_family, IPPROTO_TCP, &addr,
-				sin.sin_port, dir);
+#ifdef CONFIG_IP_VS_CA_IPV6
+        if (sin.ss_family == AF_INET6)
+            cp = ip_vs_ca_conn_get(sin.ss_family, IPPROTO_TCP, &addr,
+                    IP_VS_CA_GET_PORT_V6(sin), dir);
+        else
+#endif
+		    cp = ip_vs_ca_conn_get(sin.ss_family, IPPROTO_TCP, &addr,
+				    IP_VS_CA_GET_PORT(sin), dir);
 	}else if(sock->type == SOCK_DGRAM){
-		cp = ip_vs_ca_conn_get(sin.sin_family, IPPROTO_UDP, &addr,
-				sin.sin_port, dir);
+#ifdef CONFIG_IP_VS_CA_IPV6
+        if (sin.ss_family == AF_INET6)
+		    cp = ip_vs_ca_conn_get(sin.ss_family, IPPROTO_UDP, &addr,
+			    	IP_VS_CA_GET_PORT_V6(sin), dir);
+        else
+#endif
+            cp = ip_vs_ca_conn_get(sin.ss_family, IPPROTO_UDP, &addr,
+                    IP_VS_CA_GET_PORT(sin), dir);
 	}else{
 		ret = -5;
 		goto out;
 	}
 
-	IP_VS_CA_DBG("lookup type:%d %pI4:%d %s\n",
-				sock->type,
-				&addr.ip, ntohs(sin.sin_port),
-				cp ? "hit" : "not hit");
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (sin.ss_family == AF_INET6)
+        IP_VS_CA_DBG("lookup type:%d %pI6 port:%d %s\n",
+                    sock->type,
+                    &addr.in6, ntohs(IP_VS_CA_GET_PORT_V6(sin)),
+                    cp ? "hit" : "not hit");
+    else
+#endif
+	    IP_VS_CA_DBG("lookup type:%d %pI4:%d %s\n",
+				    sock->type,
+				    &addr.ip, ntohs(IP_VS_CA_GET_PORT(sin)),
+				    cp ? "hit" : "not hit");
 
 	if (!cp){
 		ret = -6;
 		goto out;
 	}
 
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (sin.ss_family == AF_INET6)
+        IP_VS_CA_DBG("%s called, %d %pI6:%d(%pI6:%d)->%pI6:%d\n",
+                __func__, cp->protocol,
+                &IP_VS_CA_GET_IP_V6(sin), ntohs(IP_VS_CA_GET_PORT_V6(sin)), // ???????
+                &cp->c_addr.ip6, ntohs(cp->c_port),
+                &cp->d_addr.ip6, ntohs(cp->d_port));
+#endif
 	IP_VS_CA_DBG("%s called, %d %pI4:%d(%pI4:%d)->%pI4:%d\n",
 			__func__, cp->protocol,
-			&sin.sin_addr.s_addr, ntohs(sin.sin_port),
+			&IP_VS_CA_GET_IP(sin), ntohs(IP_VS_CA_GET_PORT(sin)),
 			&cp->c_addr.ip, ntohs(cp->c_port),
 			&cp->d_addr.ip, ntohs(cp->d_port));
 
 	if (dir == IP_VS_CA_IN) {
-		sin.sin_addr.s_addr = cp->c_addr.ip;
-		sin.sin_port = cp->c_port;
+#ifdef CONFIG_IP_VS_CA_IPV6
+        if (sin.ss_family == AF_INET6) {
+            IP_VS_CA_GET_IP_V6(sin) = cp->c_addr.in6; // ??????????
+            IP_VS_CA_GET_PORT_V6(sin) = cp->c_port;
+        } else
+#endif
+        {
+            IP_VS_CA_GET_IP(sin) = cp->c_addr.ip;
+            IP_VS_CA_GET_PORT(sin) = cp->c_port;
+        }
 	} else {
-		sin.sin_addr.s_addr = cp->s_addr.ip;
-		sin.sin_port = cp->s_port;
+#ifdef CONFIG_IP_VS_CA_IPV6
+        if (sin.ss_family == AF_INET6) {
+            IP_VS_CA_GET_IP_V6(sin) = cp->s_addr.in6; // ?????????
+            IP_VS_CA_GET_PORT_V6(sin) = cp->s_port;
+        } else
+#endif
+        {
+            IP_VS_CA_GET_IP(sin) = cp->s_addr.ip;
+            IP_VS_CA_GET_PORT(sin) = cp->s_port;
+        }
 	}
+
 	ip_vs_ca_conn_put(cp);
-	if(copy_to_user(uaddr, &sin, len)) {
+
+	if(copy_to_user(uaddr, (struct sockaddr *)&sin, len)) {
 		ret = -7;
 		goto out;
 	}
@@ -123,10 +243,10 @@ asmlinkage static long
 getpeername(int fd, struct sockaddr __user *usockaddr, int __user *usockaddr_len)
 {
 	int ret, len;
+IP_VS_CA_DBG("getpeername called\n");
 
 	if (!ca_use_count_inc())
 		return -1;
-	IP_VS_CA_DBG("getpeername called\n");
 
 	ret = sys.getpeername(fd, usockaddr, usockaddr_len);
 	if (ret < 0)
@@ -145,10 +265,10 @@ accept4(int fd, struct sockaddr __user *upeer_sockaddr,
 		int __user *upeer_addrlen, int flags)
 {
 	int ret, len;
+IP_VS_CA_DBG("accept4 called\n");
 
 	if (!ca_use_count_inc())
 		return -1;
-	IP_VS_CA_DBG("accept4 called\n");
 
 	ret = sys.accept4(fd, upeer_sockaddr, upeer_addrlen, flags);
 	if (ret < 0){
@@ -167,6 +287,7 @@ out:
 asmlinkage static long
 accept(int fd, struct sockaddr __user *upeer_sockaddr, int __user *upeer_addrlen)
 {
+IP_VS_CA_DBG("accept called\n");
 	return accept4(fd, upeer_sockaddr, upeer_addrlen, 0);
 }
 
@@ -175,6 +296,7 @@ recvfrom(int fd, void __user *ubuf, size_t size, unsigned flags,
 				struct sockaddr __user *addr, int __user *addr_len)
 {
 	int ret, len;
+IP_VS_CA_DBG("recvfrom called\n");
 
 	if (!ca_use_count_inc())
 		return -1;
@@ -201,6 +323,7 @@ asmlinkage static long
 connect(int fd, struct sockaddr __user *uservaddr, int addrlen)
 {
 	int ret;
+IP_VS_CA_DBG("connect called\n");
 
 	if (!ca_use_count_inc())
 		return -1;
@@ -217,6 +340,7 @@ sendto(int fd, void __user *buff, size_t len, unsigned int flags,
 			struct sockaddr __user *addr, int addr_len)
 {
 	int ret;
+IP_VS_CA_DBG("sendto called\n");
 
 	if (!ca_use_count_inc())
 		return -1;
@@ -241,7 +365,7 @@ const char *ip_vs_ca_proto_name(unsigned proto)
 			return "TCP";
 		case IPPROTO_ICMP:
 			return "ICMP";
-#ifdef CONFIG_IP_VS_IPV6
+#ifdef CONFIG_IP_VS_CA_IPV6
 		case IPPROTO_ICMPV6:
 			return "ICMPv6";
 #endif
@@ -282,7 +406,7 @@ static int ip_vs_ca_syscall_init(void)
 }
 
 static void ip_vs_ca_syscall_cleanup(void)
-{	
+{
 	if (!sys_call_table){
 		return;
 	}
@@ -302,6 +426,8 @@ static void ip_vs_ca_syscall_cleanup(void)
 }
 
 static unsigned int _ip_vs_ca_in_hook(struct sk_buff *skb);
+static unsigned int ip_vs_ca_in_icmp(struct sk_buff *skb, struct ip_vs_ca_iphdr iph);
+static unsigned int ip_vs_ca_in_icmp_v6(struct sk_buff *skb, struct ip_vs_ca_iphdr iph);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
 static unsigned int
@@ -322,6 +448,165 @@ ip_vs_ca_in_hook(unsigned int hooknum, struct sk_buff *skb,
 }
 #endif
 
+static unsigned int
+ip_vs_ca_in_icmp(struct sk_buff *skb, struct ip_vs_ca_iphdr iph) {
+#ifndef IP_VS_CA_ICMP
+    return NF_ACCEPT;
+#else
+    struct ip_vs_ca_conn *cp;
+    struct ip_vs_ca_protocol *pp;
+    struct iphdr *ih;
+    struct icmphdr _icmph, *icmph;
+    struct ipvs_ca _ca, *ca;
+
+    IP_VS_CA_DBG("icmp packet recv\n");
+
+    ih = (struct iphdr *)skb_network_header(skb);
+
+    icmph = skb_header_pointer(skb, iph.len, sizeof(_icmph), &_icmph);
+
+    if (icmph == NULL) {
+        IP_VS_CA_DBG("icmphdr NULL\n");
+        return NF_ACCEPT;
+    }
+
+    if (ntohs(ih->tot_len) == sizeof(*ih) + sizeof(*icmph) + sizeof(*ca)
+             && icmph->type == ICMP_ECHO
+             && icmph->code == 0
+             && icmph->un.echo.id == 0x1234
+             && icmph->un.echo.sequence == 0) {
+        ca = skb_header_pointer(skb, iph.len + sizeof(*icmph), sizeof(_ca), &_ca);
+
+        if (ca == NULL) {
+            IP_VS_CA_DBG("ca NULL\n");
+            return NF_ACCEPT;
+        }
+
+        if (ca->code != 123
+                || ca->toa.opcode != tcpopt_addr
+                || ca->toa.opsize != TCPOLEN_ADDR) {
+            IP_VS_CA_DBG("ca not hit. {.code:%d, .protocol:%d,"
+                    " .toa.opcode:%d, .toa.opsize:%d}\n",
+                    ca->code, ca->protocol, ca->toa.opcode, ca->toa.opsize);
+            return NF_ACCEPT;
+        }
+
+        pp = ip_vs_ca_proto_get(ca->protocol);
+        if (unlikely(!pp))
+            return NF_ACCEPT;
+
+        cp = pp->conn_get(AF_INET, skb, pp, &iph, iph.len);
+        if (unlikely(cp)) {
+            ip_vs_ca_conn_put(cp);
+            return NF_ACCEPT;
+        } else {
+            int v;
+            if (pp->icmp_process(AF_INET, skb, pp, &iph, ca,
+                        &v, &cp) == 0) {
+                return v;
+            } else {
+                return NF_ACCEPT;
+            }
+        }
+    } else {
+        IP_VS_CA_DBG("icmphdr not hit tot_len:%d, "
+                "icmp{.type:%d, .code:%d, .echo.id:0x%04x,"
+                " .echo.sequence:%d},"
+                "want tot_len:%lu icmp.type:%d\n",
+                ntohs(ih->tot_len), icmph->type,
+                icmph->code, icmph->un.echo.id,
+                icmph->un.echo.sequence,
+                sizeof(*ih)+sizeof(*icmph)+sizeof(*ca),
+                ICMP_ECHO);
+        return NF_ACCEPT;
+    }
+#endif
+}
+
+#ifdef CONFIG_IP_VS_CA_IPV6
+static unsigned int
+ip_vs_ca_in_icmp_v6(struct sk_buff *skb, struct ip_vs_ca_iphdr iph) {
+#ifndef IP_VS_CA_ICMP
+    return NF_ACCEPT;
+#else
+    struct ipv6hdr *ih;
+    struct icmp6hdr _icmph, *icmph;
+    struct ip_vs_ca_protocol *pp;
+    struct ip_vs_ca_conn *cp;
+    unsigned int offset;
+    struct ipvs_ca_v6 _ca, *ca;
+
+    IP_VS_CA_DBG("icmpv6 packet recv\n");
+
+    ih = ipv6_hdr(skb);
+
+    offset = sizeof(struct ipv6hdr);
+
+    icmph = skb_header_pointer(skb, offset, sizeof(_icmph), &_icmph);
+
+    if (icmph == NULL) {
+        IP_VS_CA_DBG("icmpv6hdr NULL\n");
+        return NF_ACCEPT;
+    }
+
+    if (ntohs(ih->payload_len) == sizeof(*icmph) + sizeof(*ca)
+            && icmph->icmp6_type == ICMPV6_ECHO_REQUEST
+            && icmph->icmp6_code == 0
+            && htons(icmph->icmp6_dataun.u_echo.identifier) == 0x1234
+            && htons(icmph->icmp6_dataun.u_echo.sequence) == 0) {
+        offset += sizeof(_icmph);
+        ca = skb_header_pointer(skb, offset, sizeof(_ca), &_ca);
+
+        if (ca == NULL) {
+            IP_VS_CA_DBG("ca6 data NULL\n");
+            return NF_ACCEPT;
+        }
+
+        if (ca->code != 123
+                || ca->toa.opcode != tcpopt_addr
+                || ca->toa.opsize != TCPOLEN_ADDR_V6) {
+            IP_VS_CA_DBG("ca6 not hit. {.code:%d, .protocol:%d,"
+                    " .toa.opcode:%d, .toa.opsize:%d}\n",
+                    ca->code, ca->protocol, ca->toa.opcode, ca->toa.opsize);
+            return NF_ACCEPT;
+        }
+
+        pp = ip_vs_ca_proto_get(ca->protocol);
+        if (unlikely(!pp)) {
+            return NF_ACCEPT;
+        }
+
+        cp = pp->conn_get(AF_INET6, skb, pp, &iph, iph.len);
+        if (unlikely(cp)) {
+            ip_vs_ca_conn_put(cp);
+            return NF_ACCEPT;
+        } else {
+            int v;
+            if (pp->icmp_process_v6(AF_INET6, skb, pp, &iph, ca, &v, &cp) == 0) {
+                return v;
+            } else {
+                return NF_ACCEPT;
+            }
+        }
+    } else {
+        IP_VS_CA_DBG("icmp6hdr not hit payload_len:%d, "
+                "icmp6{.type:%d, .code:%d .echo.id:0x%04x,"
+                " .echo.sequence:%d},"
+                "icmph6_len:%d, ca_len:%d, "
+                "want tot_len:%lu icmp.type:%d\n",
+                ntohs(ih->payload_len),
+                icmph->icmp6_type, icmph->icmp6_code,
+                htons(icmph->icmp6_dataun.u_echo.identifier),
+                htons(icmph->icmp6_dataun.u_echo.sequence),
+                sizeof(*icmph), sizeof(*ca),
+                sizeof(*icmph)+sizeof(*ca),
+                ICMPV6_ECHO_REQUEST);
+        return NF_ACCEPT;
+    }
+#endif
+}
+#endif
+
 static unsigned int _ip_vs_ca_in_hook(struct sk_buff *skb)
 {
 	struct ip_vs_ca_iphdr iph;
@@ -333,7 +618,7 @@ static unsigned int _ip_vs_ca_in_hook(struct sk_buff *skb)
 
 	af = (skb->protocol == htons(ETH_P_IP)) ? AF_INET : AF_INET6;
 
-	if (af != AF_INET) {
+	if (af != AF_INET && af != AF_INET6) {
 		goto out;
 	}
 
@@ -353,99 +638,86 @@ static unsigned int _ip_vs_ca_in_hook(struct sk_buff *skb)
 		goto out;
 	}
 
-	if (iph.protocol == IPPROTO_ICMP) {
-#ifndef IP_VS_CA_ICMP
-		return NF_ACCEPT;
-#else
-		struct iphdr *ih;
-		struct icmphdr _icmph, *icmph;
-		struct ipvs_ca _ca, *ca;
-
-		IP_VS_CA_DBG("icmp packet recv\n");
-
-		ih = (struct iphdr *)skb_network_header(skb);
-
-		icmph = skb_header_pointer(skb, iph.len,
-				sizeof(_icmph), &_icmph);
-
-		if (icmph == NULL){
-			IP_VS_CA_DBG("icmphdr NULL\n");
-			goto out;
-		}
-
-		if(ntohs(ih->tot_len) == sizeof(*ih)+sizeof(*icmph)+sizeof(*ca)
-				&& icmph->type == ICMP_ECHO 
-				&& icmph->code == 0 
-				&& icmph->un.echo.id == 0x1234
-				&& icmph->un.echo.sequence == 0){
-			ca = skb_header_pointer(skb, iph.len + sizeof(*icmph),
-				sizeof(_ca), &_ca);
-
-			if (ca == NULL){
-				IP_VS_CA_DBG("ca NULL\n");
-				goto out;
-			}
-
-			if(ca->code != 123
-					|| ca->toa.opcode != tcpopt_addr
-					|| ca->toa.opsize != TCPOLEN_ADDR){
-				IP_VS_CA_DBG("ca not hit. {.code:%d, .protocol:%d,"
-						" .toa.opcode:%d, .toa.opsize:%d}\n",
-						ca->code, ca->protocol, ca->toa.opcode, ca->toa.opsize);
-				goto out;
-			}
-
-			pp = ip_vs_ca_proto_get(ca->protocol);
-			if (unlikely(!pp))
-				goto out;
-
-			cp = pp->conn_get(af, skb, pp, &iph, iph.len);
-			if(unlikely(cp)){
-				ip_vs_ca_conn_put(cp);
-				goto out;
-			}else{
-				int v;
-				if(pp->icmp_process(af, skb, pp, &iph, icmph, ca,
-							&v, &cp) == 0){
-					return v;
-				}else{
-					goto out;
-				}
-			}
-		}else{
-			IP_VS_CA_DBG("icmphdr not hit tot_len:%d, "
-					"icmp{.type:%d, .code:%d .echo.id:0x%04x,"
-					" .echo.sequence:%d}\n"
-					"want tot_len:%lu icmp.type:%d\n", 
-					ntohs(ih->tot_len), icmph->type,
-					icmph->code, icmph->un.echo.id,
-					icmph->un.echo.sequence,
-					sizeof(*ih)+sizeof(*icmph)+sizeof(*ca),
-					ICMP_ECHO);
-			goto out;
-		}
+#ifdef CONFIG_IP_VS_CA_IPV6
+    if (af == AF_INET6) {
+        if (iph.protocol == IPPROTO_ICMPV6) {
+            int v;
+            v = ip_vs_ca_in_icmp_v6(skb, iph);
+            IP_VS_CA_DBG("icmp_v6 return v:%d af:%d, protocol:%d\n",
+                    v, af, iph.protocol);
+            if (v == NF_ACCEPT)
+                goto out;
+            else
+                return v;
+        }
+    }
 #endif
-	}else if (iph.protocol == IPPROTO_TCP) {
-		/* Protocol supported? */
-		pp = ip_vs_ca_proto_get(iph.protocol);
-		if (unlikely(!pp))
-			goto out;
+	if (iph.protocol == IPPROTO_ICMP) {
+        int v;
+        v = ip_vs_ca_in_icmp(skb, iph);
+        IP_VS_CA_DBG("icmp return v:%d af:%d, protocol:%d\n",
+                v, af, iph.protocol);
+        if (v == NF_ACCEPT)
+            goto out;
+        else
+            return v;
+    }
+
+    if (iph.protocol == IPPROTO_TCP) {
+
+int relay = 492864522;
+if ( iph.saddr.ip == relay)
+    goto out;
+
+if (af == AF_INET6)
+    IP_VS_CA_DBG("enter tcp process: saddr:%pI6 daddr:%pI6\n", &iph.saddr.ip, &iph.daddr.ip);
+else
+    IP_VS_CA_DBG("enter tcp process: saddr:%pI4 daddr:%pI4\n", &iph.saddr.ip, &iph.daddr.ip);
+
+        /* Protocol supported? */
+        pp = ip_vs_ca_proto_get(iph.protocol);
+		if (unlikely(!pp)) {
+if (af == AF_INET6)
+    IP_VS_CA_DBG("pp get fail: saddr:%pI6 daddr:%pI6\n", &iph.saddr.ip, &iph.daddr.ip);
+else
+    IP_VS_CA_DBG("pp get fail: saddr:%pI4 daddr:%pI4\n", &iph.saddr.ip, &iph.daddr.ip);
+            goto out;
+        }
 
 		/*
 		 * Check if the packet belongs to an existing connection entry
 		 */
 		cp = pp->conn_get(af, skb, pp, &iph, iph.len);
-
+if (af == AF_INET6)
+    IP_VS_CA_DBG("get cp: saddr:%pI6 daddr:%pI6\n", &iph.saddr.ip, &iph.daddr.ip);
+else
+    IP_VS_CA_DBG("get cp: saddr:%pI4 daddr:%pI4\n", &iph.saddr.ip, &iph.daddr.ip);
 		if (likely(cp)) {
+if (af == AF_INET6)
+    IP_VS_CA_DBG("cp get success: saddr:%pI6 daddr:%pI6\n", &iph.saddr.ip, &iph.daddr.ip);
+else
+    IP_VS_CA_DBG("cp get success: saddr:%pI4 daddr:%pI4\n", &iph.saddr.ip, &iph.daddr.ip);
 			ip_vs_ca_conn_put(cp);
 			goto out;
 		} else {
 			int v;
+if (af == AF_INET6)
+    IP_VS_CA_DBG("cp get fail: saddr:%pI6 daddr:%pI6\n", &iph.saddr.ip, &iph.daddr.ip);
+else
+    IP_VS_CA_DBG("cp get fail: saddr:%pI4 daddr:%pI4\n", &iph.saddr.ip, &iph.daddr.ip);
 			/* create a new connection */
 			if(pp->skb_process(af, skb, pp, &iph, &v, &cp) == 0){
+if (af == AF_INET6)
+    IP_VS_CA_DBG("create new conn success: saddr:%pI6 daddr:%pI6\n", &iph.saddr.ip, &iph.daddr.ip);
+else
+    IP_VS_CA_DBG("create new conn success: saddr:%pI4 daddr:%pI4\n", &iph.saddr.ip, &iph.daddr.ip);
 				//LeaveFunction();
 				return v;
 			}else{
+if (af == AF_INET6)
+    IP_VS_CA_DBG("create new conn fail: saddr:%pI6 daddr:%pI6\n", &iph.saddr.ip, &iph.daddr.ip);
+else
+    IP_VS_CA_DBG("create new conn fail: saddr:%pI4 daddr:%pI4\n", &iph.saddr.ip, &iph.daddr.ip);
 				goto out;
 			}
 		}
@@ -456,7 +728,7 @@ out:
 	return NF_ACCEPT;
 }
 
-static struct nf_hook_ops ip_vs_ca_ops[] __read_mostly = { 
+static struct nf_hook_ops ip_vs_ca_ops[] __read_mostly = {
 	{
 		.hook     = (nf_hookfn *)ip_vs_ca_in_hook,
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,0,0)
@@ -466,6 +738,17 @@ static struct nf_hook_ops ip_vs_ca_ops[] __read_mostly = {
 		.hooknum  = NF_INET_LOCAL_IN,
 		.priority = NF_IP_PRI_CONNTRACK_CONFIRM,
 	},
+#ifdef CONFIG_IP_VS_CA_IPV6
+    {
+        .hook     = (nf_hookfn *)ip_vs_ca_in_hook,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,0,0)
+        .owner    = THIS_MODULE,
+#endif
+        .pf       = NFPROTO_IPV6,
+        .hooknum  = NF_INET_LOCAL_IN,
+        .priority = NF_IP6_PRI_LAST,
+    },
+#endif
 };
 
 static int __init ip_vs_ca_init(void)
