@@ -255,9 +255,9 @@ struct ip_vs_ca_conn *ip_vs_ca_conn_new(int af,
 					//__be32 saddr, __be16 sport,
 					//__be32 daddr, __be16 dport,
 					//__be32 caddr, __be16 cport,
-                    const union nf_inet_addr *saddr, __be sport,
-                    const union nf_inet_addr *daddr, __be dport,
-                    const union nf_inet_addr *caddr, __be cport,
+                    const union nf_inet_addr *saddr, __be16 sport,
+                    const union nf_inet_addr *daddr, __be16 dport,
+                    const union nf_inet_addr *caddr, __be16 cport,
 					struct sk_buff *skb)
 {
 	struct ip_vs_ca_conn *cp;
