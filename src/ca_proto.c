@@ -36,11 +36,11 @@ static struct ip_vs_ca_conn *tcpudp_conn_get(int af, const struct sk_buff *skb,
 		unsigned int proto_off)
 {
     __be16 _ports[2], *pptr;
-    
+
     pptr = skb_header_pointer(skb, proto_off, sizeof(_ports), _ports);
     if (pptr == NULL)
     	return NULL;
-    
+
     return ip_vs_ca_conn_get(af, iph->protocol, &iph->saddr, pptr[0], IP_VS_CA_IN);
 }
 
@@ -50,7 +50,6 @@ static int tcpudp_icmp_process(int af, struct sk_buff *skb,
 		struct ipvs_ca *ca,
         int *verdict, struct ip_vs_ca_conn **cpp)
 {
-
     //create cp
     union nf_inet_addr caddr;
     IP_VS_CA_INC_STATS(ext_stats, SYN_RECV_SOCK_IP_VS_CA_CNT);
@@ -63,7 +62,7 @@ static int tcpudp_icmp_process(int af, struct sk_buff *skb,
     if (*cpp == NULL){
         goto out;
     }
-    
+
     ip_vs_ca_conn_put(*cpp);
     *verdict = NF_ACCEPT;
     return 0;
@@ -92,7 +91,7 @@ static int tcpudp_icmp_process_v6(int af, struct sk_buff *skb,
     if (*cpp == NULL){
             goto out;
     }
-    
+
     ip_vs_ca_conn_put(*cpp);
     *verdict = NF_ACCEPT;
     return 0;
@@ -103,6 +102,7 @@ out:
     return 1;
 }
 #endif
+
 /*
  * #################### tcp ##################
  */
@@ -117,14 +117,14 @@ static __u64 get_ip_vs_ca_data(struct tcphdr *th)
     int length;
     union ip_vs_ca_data tdata;
     unsigned char *ptr;
-    
+
     if (th == NULL) {
         return 0;
     }
-    
+
     length = (th->doff * 4) - sizeof(struct tcphdr);
     ptr = (unsigned char *) (th + 1);
-    
+
     while (length > 0) {
         int opcode = *ptr++;
         int opsize;
@@ -198,7 +198,7 @@ static int get_ip_vs_ca_data_v6(struct tcphdr *th, union ip_vs_ca_data_v6 * p_td
                 if (tcpopt_addr == opcode && TCPOLEN_ADDR_V6 == opsize) {
                     memcpy(&tdata_v6, ptr - 2, sizeof(tdata_v6));
                     memcpy(p_tdata_v6, &tdata_v6, sizeof(tdata_v6));
-#if 0 
+#if 0
                     IP_VS_CA_DBG("ip_vs_ca_data_v6 get data success\n");
 #endif
                     return 1;
@@ -338,7 +338,7 @@ struct ip_vs_ca_protocol ip_vs_ca_protocol_udp = {
 struct ip_vs_ca_protocol *ip_vs_ca_proto_get(unsigned short proto)
 {
     int i;
-    
+
     for(i = 0; i<IP_VS_CA_PROTO_TAB_SIZE; i++){
         if (ip_vs_ca_proto_table[i]->protocol == proto)
             return ip_vs_ca_proto_table[i];

@@ -290,18 +290,18 @@ struct ip_vs_ca_protocol {
     int dont_defrag;
     atomic_t appcnt;	/* counter of proto app incs */
     int *timeout;		/* protocol timeout table */
-    
+
     int (*skb_process) (int af, struct sk_buff * skb,
     		      struct ip_vs_ca_protocol * pp,
     		      const struct ip_vs_ca_iphdr * iph,
     		      int *verdict, struct ip_vs_ca_conn ** cpp);
-    
+
     int (*icmp_process) (int af, struct sk_buff * skb,
     		      struct ip_vs_ca_protocol * pp,
     		      const struct ip_vs_ca_iphdr * iph,
     			  struct ipvs_ca *ca,
     		      int *verdict, struct ip_vs_ca_conn ** cpp);
-    
+
 #ifdef CONFIG_IP_VS_CA_IPV6
     int (*icmp_process_v6) (int af, struct sk_buff * skb,
                       struct ip_vs_ca_protocol * pp,
@@ -328,12 +328,9 @@ extern void ip_vs_ca_conn_cleanup(void);
 extern void ip_vs_ca_conn_put(struct ip_vs_ca_conn *cp);
 extern void ip_vs_ca_conn_cleanup(void);
 extern struct ip_vs_ca_conn *ip_vs_ca_conn_get(int af, __u8 protocol,
-	 const union nf_inet_addr *s_addr, __be16 s_port, int dir);
+	        const union nf_inet_addr *s_addr, __be16 s_port, int dir);
 struct ip_vs_ca_conn *ip_vs_ca_conn_new(int af,
 					struct ip_vs_ca_protocol *pp,
-					//__be32 saddr, __be16 sport,
-					//__be32 daddr, __be16 dport,
-					//__be32 oaddr, __be16 oport,
                     const union nf_inet_addr *saddr, __be16 sport,
                     const union nf_inet_addr *daddr, __be16 dport,
                     const union nf_inet_addr *caddr, __be16 cport,

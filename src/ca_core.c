@@ -42,9 +42,9 @@ ip_vs_ca_modify_uaddr(int fd, struct sockaddr *uaddr, int len, int dir) {
     struct sockaddr_storage sin;
     union nf_inet_addr addr;
     struct ip_vs_ca_conn *cp;
-    
+
     err = copy_from_user(&sin, (struct sockaddr_storage *)uaddr, len);
-    
+
     if (err){
         ret = -2;
         goto out;
@@ -350,23 +350,23 @@ static int ip_vs_ca_syscall_init(void)
     original_cr0 = read_cr0();
     write_cr0(original_cr0 & ~0x00010000);
     IP_VS_CA_DBG("Loading ip_vs_ca module, sys call table at %p\n", sys_call_table);
-    
+
     sys.getpeername = (void *)(sys_call_table[__NR_getpeername]);
     sys.accept4	= (void *)(sys_call_table[__NR_accept4]);
     sys.recvfrom	= (void *)(sys_call_table[__NR_recvfrom]);
     sys.connect	= (void *)(sys_call_table[__NR_connect]);
     sys.accept	= (void *)(sys_call_table[__NR_accept]);
     sys.sendto	= (void *)(sys_call_table[__NR_sendto]);
-    
+
     sys_call_table[__NR_getpeername]= (void *)getpeername;
     sys_call_table[__NR_accept4]	= (void *)accept4;
     sys_call_table[__NR_recvfrom]	= (void *)recvfrom;
     sys_call_table[__NR_connect]	= (void *)connect;
     sys_call_table[__NR_accept]	= (void *)accept;
     sys_call_table[__NR_sendto]	= (void *)sendto;
-    
+
     write_cr0(original_cr0);
-    
+
     return 0;
 }
 
@@ -375,16 +375,16 @@ static void ip_vs_ca_syscall_cleanup(void)
     if (!sys_call_table){
     	return;
     }
-    
+
     write_cr0(original_cr0 & ~0x00010000);
-    
+
     sys_call_table[__NR_getpeername] = (void *)sys.getpeername;
     sys_call_table[__NR_accept4]     = (void *)sys.accept4;
     sys_call_table[__NR_recvfrom]    = (void *)sys.recvfrom;
     sys_call_table[__NR_connect]     = (void *)sys.connect;
     sys_call_table[__NR_accept]      = (void *)sys.accept;
     sys_call_table[__NR_sendto]      = (void *)sys.sendto;
-    
+
     write_cr0(original_cr0);
     //msleep(100);
     sys_call_table = NULL;
@@ -578,18 +578,17 @@ static unsigned int _ip_vs_ca_in_hook(struct sk_buff *skb)
     struct ip_vs_ca_conn *cp;
     struct ip_vs_ca_protocol *pp;
     int af;
-    
+
     //EnterFunction();
-    
+
     af = (skb->protocol == htons(ETH_P_IP)) ? AF_INET : AF_INET6;
-    
+
     if (af != AF_INET && af != AF_INET6) {
     	goto out;
     }
-    
+
     ip_vs_ca_fill_iphdr(af, skb_network_header(skb), &iph);
-    
-    
+
     /*
      *      Big tappo: only PACKET_HOST, including loopback for local client
      *      Don't handle local packets on IPv6 for now
@@ -685,38 +684,38 @@ static struct nf_hook_ops ip_vs_ca_ops[] __read_mostly = {
 static int __init ip_vs_ca_init(void)
 {
     int ret;
-    
+
     ret = ip_vs_ca_syscall_init();
     if (ret < 0){
     	IP_VS_CA_ERR("can't modify syscall table.\n");
     	goto out_err;
     }
     IP_VS_CA_DBG("modify syscall table done.\n");
-    
+
     ip_vs_ca_protocol_init();
     IP_VS_CA_DBG("ip_vs_ca_protocol_init done.\n");
-    
+
     ret = ip_vs_ca_control_init();
     if (ret < 0){
     	IP_VS_CA_ERR("can't modify syscall table.\n");
     	goto cleanup_syscall;
     }
     IP_VS_CA_DBG("ip_vs_ca_control_init done.\n");
-    
+
     ret = ip_vs_ca_conn_init();
     if (ret < 0){
     	IP_VS_CA_ERR("can't setup connection table.\n");
     	goto cleanup_control;
     }
     IP_VS_CA_DBG("ip_vs_ca_conn_init done.\n");
-    
+
     ret = nf_register_hooks(ip_vs_ca_ops, ARRAY_SIZE(ip_vs_ca_ops));
     if (ret < 0){
     	IP_VS_CA_ERR("can't register hooks.\n");
     	goto cleanup_conn;
     }
     IP_VS_CA_DBG("nf_register_hooks done.\n");
-    
+
     IP_VS_CA_INFO("ip_vs_ca loaded.");
     return ret;
 
