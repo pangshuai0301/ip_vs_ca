@@ -33,29 +33,26 @@ static unsigned int ip_vs_ca_conn_rnd;
 #define CT_LOCKARRAY_MASK  (CT_LOCKARRAY_SIZE-1)
 
 struct ip_vs_ca_aligned_lock {
-	spinlock_t l;
+    spinlock_t l;
 } __attribute__ ((__aligned__(SMP_CACHE_BYTES)));
 
 /* lock array for conn table */
 static struct ip_vs_ca_aligned_lock
     __ip_vs_ca_conntbl_lock_array[CT_LOCKARRAY_SIZE] __cacheline_aligned;
 
-static inline void ct_lock(unsigned key)
-{
-	spin_lock_bh(&__ip_vs_ca_conntbl_lock_array[key & CT_LOCKARRAY_MASK].l);
+static inline void ct_lock(unsigned key) {
+    spin_lock_bh(&__ip_vs_ca_conntbl_lock_array[key & CT_LOCKARRAY_MASK].l);
 }
 
-static inline void ct_unlock(unsigned key)
-{
-	spin_unlock_bh(&__ip_vs_ca_conntbl_lock_array[key & CT_LOCKARRAY_MASK].l);
+static inline void ct_unlock(unsigned key) {
+    spin_unlock_bh(&__ip_vs_ca_conntbl_lock_array[key & CT_LOCKARRAY_MASK].l);
 }
 
 /*
  *	Returns hash value for IPVS connection entry
  */
 static unsigned int ip_vs_ca_conn_hashkey(int af, unsigned proto,
-		const union nf_inet_addr *addr, __be16 port)
-{
+		const union nf_inet_addr *addr, __be16 port) {
 #ifdef CONFIG_IP_VS_CA_IPV6
     if (af == AF_INET6)
         return jhash_3words(
@@ -73,45 +70,43 @@ static unsigned int ip_vs_ca_conn_hashkey(int af, unsigned proto,
 /*
  * Lock two buckets of ip_vs_ca_conn_tab
  */
-static inline void ct_lock2(unsigned shash, unsigned chash)
-{
-	unsigned slock, clock;
-
-	slock = shash & CT_LOCKARRAY_MASK;
-	clock = chash & CT_LOCKARRAY_MASK;
-
-	/* lock the conntab bucket */
-	if (slock < clock) {
-		ct_lock(shash);
-		ct_lock(chash);
-	} else if (slock > clock) {
-		ct_lock(chash);
-		ct_lock(shash);
-	} else {
-		ct_lock(shash);
-	}
+static inline void ct_lock2(unsigned shash, unsigned chash) {
+    unsigned slock, clock;
+    
+    slock = shash & CT_LOCKARRAY_MASK;
+    clock = chash & CT_LOCKARRAY_MASK;
+    
+    /* lock the conntab bucket */
+    if (slock < clock) {
+        ct_lock(shash);
+        ct_lock(chash);
+    } else if (slock > clock) {
+        ct_lock(chash);
+        ct_lock(shash);
+    } else {
+        ct_lock(shash);
+    }
 }
 
 /*
  * Unlock two buckets of ip_vs_ca_conn_tab
  */
-static inline void ct_unlock2(unsigned shash, unsigned chash)
-{
-	unsigned slock, clock;
-
-	slock = shash & CT_LOCKARRAY_MASK;
-	clock = chash & CT_LOCKARRAY_MASK;
-
-	/* lock the conntab bucket */
-	if (slock < clock) {
-		ct_unlock(chash);
-		ct_unlock(shash);
-	} else if (slock > clock) {
-		ct_unlock(shash);
-		ct_unlock(chash);
-	} else {
-		ct_unlock(shash);
-	}
+static inline void ct_unlock2(unsigned shash, unsigned chash) {
+    unsigned slock, clock;
+    
+    slock = shash & CT_LOCKARRAY_MASK;
+    clock = chash & CT_LOCKARRAY_MASK;
+    
+    /* lock the conntab bucket */
+    if (slock < clock) {
+        ct_unlock(chash);
+        ct_unlock(shash);
+    } else if (slock > clock) {
+        ct_unlock(shash);
+        ct_unlock(chash);
+    } else {
+        ct_unlock(shash);
+    }
 }
 
 /*
@@ -120,23 +115,22 @@ static inline void ct_unlock2(unsigned shash, unsigned chash)
  */
 
 static inline int __ip_vs_ca_conn_hash(struct ip_vs_ca_conn *cp, unsigned shash,
-		unsigned chash)
-{
-	int ret;
-
-	if (!(cp->flags & IP_VS_CA_CONN_F_HASHED)) {
-		list_add(&cp->s_list, &ip_vs_ca_conn_tab_s[shash]);
-		list_add(&cp->c_list, &ip_vs_ca_conn_tab_c[chash]);
-		cp->flags |= IP_VS_CA_CONN_F_HASHED;
-		atomic_inc(&cp->refcnt);
-		ret = 1;
-	} else {
-		IP_VS_CA_ERR("request for already hashed, called from %pF\n",
-		       __builtin_return_address(0));
-		ret = 0;
-	}
-
-	return ret;
+		unsigned chash) {
+    int ret;
+    
+    if (!(cp->flags & IP_VS_CA_CONN_F_HASHED)) {
+        list_add(&cp->s_list, &ip_vs_ca_conn_tab_s[shash]);
+        list_add(&cp->c_list, &ip_vs_ca_conn_tab_c[chash]);
+        cp->flags |= IP_VS_CA_CONN_F_HASHED;
+        atomic_inc(&cp->refcnt);
+        ret = 1;
+    } else {
+        IP_VS_CA_ERR("request for already hashed, called from %pF\n",
+    	       __builtin_return_address(0));
+        ret = 0;
+    }
+    
+    return ret;
 }
 
 /*
@@ -145,23 +139,22 @@ static inline int __ip_vs_ca_conn_hash(struct ip_vs_ca_conn *cp, unsigned shash,
  *	returns bool success.
  */
 static int
-ip_vs_ca_conn_hash(struct ip_vs_ca_conn *cp)
-{
-	unsigned shash, chash;
-	int ret;
-
-	shash = ip_vs_ca_conn_hashkey(cp->af, cp->protocol,
-			&cp->s_addr, cp->s_port);
-	chash = ip_vs_ca_conn_hashkey(cp->af, cp->protocol,
-			&cp->c_addr, cp->c_port);
-
-	ct_lock2(shash, chash);
-
-	ret = __ip_vs_ca_conn_hash(cp, shash, chash);
-
-	ct_unlock2(shash, chash);
-
-	return ret;
+ip_vs_ca_conn_hash(struct ip_vs_ca_conn *cp) {
+    unsigned shash, chash;
+    int ret;
+    
+    shash = ip_vs_ca_conn_hashkey(cp->af, cp->protocol,
+    		&cp->s_addr, cp->s_port);
+    chash = ip_vs_ca_conn_hashkey(cp->af, cp->protocol,
+    		&cp->c_addr, cp->c_port);
+    
+    ct_lock2(shash, chash);
+    
+    ret = __ip_vs_ca_conn_hash(cp, shash, chash);
+    
+    ct_unlock2(shash, chash);
+    
+    return ret;
 }
 
 /*
@@ -170,135 +163,126 @@ ip_vs_ca_conn_hash(struct ip_vs_ca_conn *cp)
  *	returns bool success.
  */
 static int
-ip_vs_ca_conn_unhash(struct ip_vs_ca_conn *cp)
-{
-	unsigned shash, chash;
-	int ret;
-
-	shash = ip_vs_ca_conn_hashkey(cp->af, cp->protocol,
-			&cp->s_addr, cp->s_port);
-	chash = ip_vs_ca_conn_hashkey(cp->af, cp->protocol,
-			&cp->c_addr, cp->c_port);
-
-	/* locked */
-	ct_lock2(shash, chash);
-
-	/* unhashed */
-	if ((cp->flags & IP_VS_CA_CONN_F_HASHED)
-	    && (atomic_read(&cp->refcnt) == 2)) {
-		list_del(&cp->s_list);
-		list_del(&cp->c_list);
-		cp->flags &= ~IP_VS_CA_CONN_F_HASHED;
-		atomic_dec(&cp->refcnt);
-		ret = 1;
-	} else {
-		ret = 0;
-	}
-
-	ct_unlock2(shash, chash);
-
-	return ret;
+ip_vs_ca_conn_unhash(struct ip_vs_ca_conn *cp) {
+    unsigned shash, chash;
+    int ret;
+    
+    shash = ip_vs_ca_conn_hashkey(cp->af, cp->protocol,
+    		&cp->s_addr, cp->s_port);
+    chash = ip_vs_ca_conn_hashkey(cp->af, cp->protocol,
+    		&cp->c_addr, cp->c_port);
+    
+    /* locked */
+    ct_lock2(shash, chash);
+    
+    /* unhashed */
+    if ((cp->flags & IP_VS_CA_CONN_F_HASHED) && (atomic_read(&cp->refcnt) == 2)) {
+        list_del(&cp->s_list);
+        list_del(&cp->c_list);
+        cp->flags &= ~IP_VS_CA_CONN_F_HASHED;
+        atomic_dec(&cp->refcnt);
+        ret = 1;
+    } else {
+        ret = 0;
+    }
+    
+    ct_unlock2(shash, chash);
+    
+    return ret;
 }
 
-static void ip_vs_ca_conn_expire(unsigned long data)
-{
-	struct ip_vs_ca_conn *cp = (struct ip_vs_ca_conn *)data;
+static void ip_vs_ca_conn_expire(unsigned long data) {
+    struct ip_vs_ca_conn *cp = (struct ip_vs_ca_conn *)data;
 
-	/*
-	 * Set proper timeout.
-	 */
-	cp->timeout = 60 * HZ;
+    /*
+     * Set proper timeout.
+     */
+    cp->timeout = 60 * HZ;
+    
+    /*
+     *      hey, I'm using it
+     */
+    atomic_inc(&cp->refcnt);
+    
+    /*
+     *      unhash it if it is hashed in the conn table
+     */
+    if (!ip_vs_ca_conn_unhash(cp))
+    	goto expire_later;
+    
+    /*
+     *      refcnt==1 implies I'm the only one referrer
+     */
+    if (likely(atomic_read(&cp->refcnt) == 1)) {
+    	/* delete the timer if it is activated by other users */
+        if (timer_pending(&cp->timer))
+    	    del_timer(&cp->timer);
 
-	/*
-	 *      hey, I'm using it
-	 */
-	atomic_inc(&cp->refcnt);
+        atomic_dec(&ip_vs_ca_conn_count);
+        IP_VS_CA_INC_STATS(ext_stats, CONN_DEL_CNT);
+    
+            if (cp->af == AF_INET) {
+                IP_VS_CA_DBG("conn expire: %pI4:%d(%pI4:%d) -> %pI4:%d timer:%p\n",
+            			&cp->s_addr.ip, ntohs(cp->s_port),
+            			&cp->c_addr.ip, ntohs(cp->c_port),
+            			&cp->d_addr.ip, ntohs(cp->d_port),
+            			&cp->timer);
+                kmem_cache_free(ip_vs_ca_conn_cachep, cp);
+                return;
+            }
+    }
 
-	/*
-	 *      unhash it if it is hashed in the conn table
-	 */
-	if (!ip_vs_ca_conn_unhash(cp))
-		goto expire_later;
-
-	/*
-	 *      refcnt==1 implies I'm the only one referrer
-	 */
-	if (likely(atomic_read(&cp->refcnt) == 1)) {
-		/* delete the timer if it is activated by other users */
-		if (timer_pending(&cp->timer))
-			del_timer(&cp->timer);
-
-		atomic_dec(&ip_vs_ca_conn_count);
-		IP_VS_CA_INC_STATS(ext_stats, CONN_DEL_CNT);
-
-		IP_VS_CA_DBG("conn expire: %pI4:%d(%pI4:%d) -> %pI4:%d timer:%p\n",
-				&cp->s_addr.ip, ntohs(cp->s_port),
-				&cp->c_addr.ip, ntohs(cp->c_port),
-				&cp->d_addr.ip, ntohs(cp->d_port),
-				&cp->timer);
-		kmem_cache_free(ip_vs_ca_conn_cachep, cp);
-		return;
-	}
-
-	/* hash it back to the table */
-	ip_vs_ca_conn_hash(cp);
+    /* hash it back to the table */
+    ip_vs_ca_conn_hash(cp);
 
 expire_later:
-	IP_VS_CA_DBG("delayed: conn->refcnt-1=%d\n",
-		  atomic_read(&cp->refcnt) - 1);
+    IP_VS_CA_DBG("delayed: conn->refcnt-1=%d\n", atomic_read(&cp->refcnt) - 1);
 
-	ip_vs_ca_conn_put(cp);
+    ip_vs_ca_conn_put(cp);
 }
 
-struct ip_vs_ca_conn *ip_vs_ca_conn_new(int af,
-					struct ip_vs_ca_protocol *pp,
-					//__be32 saddr, __be16 sport,
-					//__be32 daddr, __be16 dport,
-					//__be32 caddr, __be16 cport,
-                    const union nf_inet_addr *saddr, __be16 sport,
-                    const union nf_inet_addr *daddr, __be16 dport,
-                    const union nf_inet_addr *caddr, __be16 cport,
-					struct sk_buff *skb)
-{
-	struct ip_vs_ca_conn *cp;
-
-	//EnterFunction();
-
-	cp = kmem_cache_zalloc(ip_vs_ca_conn_cachep, GFP_ATOMIC);
-	if (cp == NULL) {
-		IP_VS_CA_ERR("%s(): no memory\n", __func__);
-		return NULL;
-	}
-
-	/* now init connection */
-	IP_VS_CA_DBG("setup_timer, %p\n", &cp->timer);
-	setup_timer(&cp->timer, ip_vs_ca_conn_expire, (unsigned long)cp);
-	cp->af = af;
-	cp->protocol = pp->protocol;
-
-	ip_vs_ca_addr_copy(af, &cp->s_addr, saddr);
-	//cp->s_addr.ip = saddr;
-	cp->s_port = sport;
+struct ip_vs_ca_conn *
+ip_vs_ca_conn_new(int af, struct ip_vs_ca_protocol *pp,
+                  const union nf_inet_addr *saddr, __be16 sport,
+                  const union nf_inet_addr *daddr, __be16 dport,
+                  const union nf_inet_addr *caddr, __be16 cport,
+                  struct sk_buff *skb) {
+    struct ip_vs_ca_conn *cp;
+    
+    //EnterFunction();
+    
+    cp = kmem_cache_zalloc(ip_vs_ca_conn_cachep, GFP_ATOMIC);
+    if (cp == NULL) {
+        IP_VS_CA_ERR("%s(): no memory\n", __func__);
+        return NULL;
+    }
+    
+    /* now init connection */
+    IP_VS_CA_DBG("setup_timer, %p\n", &cp->timer);
+    setup_timer(&cp->timer, ip_vs_ca_conn_expire, (unsigned long)cp);
+    cp->af = af;
+    cp->protocol = pp->protocol;
+    
+    ip_vs_ca_addr_copy(af, &cp->s_addr, saddr);
+    cp->s_port = sport;
 
     ip_vs_ca_addr_copy(af, &cp->c_addr, caddr);
-	//cp->c_addr.ip = caddr;
-	cp->c_port = cport;
+    cp->c_port = cport;
 
     ip_vs_ca_addr_copy(af, &cp->d_addr, daddr);
-	//cp->d_addr.ip = daddr;
-	cp->d_port = dport;
+    cp->d_port = dport;
 
-	cp->flags = 0;
+    cp->flags = 0;
 
-	spin_lock_init(&cp->lock);
-	atomic_set(&cp->refcnt, 1);
-	atomic_inc(&ip_vs_ca_conn_count);
-	IP_VS_CA_INC_STATS(ext_stats, CONN_NEW_CNT);
-
-	cp->state = 0;
-	cp->timeout = *pp->timeout;
-
-	ip_vs_ca_conn_hash(cp);
+    spin_lock_init(&cp->lock);
+    atomic_set(&cp->refcnt, 1);
+    atomic_inc(&ip_vs_ca_conn_count);
+    IP_VS_CA_INC_STATS(ext_stats, CONN_NEW_CNT);
+    
+    cp->state = 0;
+    cp->timeout = *pp->timeout;
+    
+    ip_vs_ca_conn_hash(cp);
 
 #ifdef CONFIG_IP_VS_CA_IPV6
     if (af == AF_INET6)
@@ -309,11 +293,11 @@ struct ip_vs_ca_conn *ip_vs_ca_conn_new(int af,
                 &cp->d_addr.ip, ntohs(cp->d_port));
     else
 #endif
-	    IP_VS_CA_DBG("conn new: proto:%u, %pI4:%d(%pI4:%d) -> %pI4:%d\n",
-			cp->protocol,
-			&cp->s_addr.ip, ntohs(cp->s_port),
-			&cp->c_addr.ip, ntohs(cp->c_port),
-			&cp->d_addr.ip, ntohs(cp->d_port));
+        IP_VS_CA_DBG("conn new: proto:%u, %pI4:%d(%pI4:%d) -> %pI4:%d\n",
+		cp->protocol,
+		&cp->s_addr.ip, ntohs(cp->s_port),
+		&cp->c_addr.ip, ntohs(cp->c_port),
+		&cp->d_addr.ip, ntohs(cp->d_port));
 	//LeaveFunction();
 	return cp;
 }
@@ -321,139 +305,136 @@ struct ip_vs_ca_conn *ip_vs_ca_conn_new(int af,
 /*
  * just ipv4
  */
-struct ip_vs_ca_conn *ip_vs_ca_conn_get(int af, __u8 protocol,
-	 const union nf_inet_addr *addr, __be16 port, int dir) {
-	unsigned hash;
-	struct ip_vs_ca_conn *cp;
-
-	hash = ip_vs_ca_conn_hashkey(af, protocol, addr, port);
-
-	ct_lock(hash);
-
-	if (dir == IP_VS_CA_IN) {
-		list_for_each_entry(cp, &ip_vs_ca_conn_tab_s[hash], s_list) {
-			if (cp->af == af &&
-			    ip_vs_ca_addr_equal(af, addr, &cp->s_addr) &&
-			    port == cp->s_port &&
-			    protocol == cp->protocol) {
-				/* HIT */
-				atomic_inc(&cp->refcnt);
-				ct_unlock(hash);
-				return cp;
-			}
-		}
-	}else{
-		list_for_each_entry(cp, &ip_vs_ca_conn_tab_c[hash], c_list) {
-			if (cp->af == af &&
-			    ip_vs_ca_addr_equal(af, addr, &cp->c_addr) &&
-			    port == cp->c_port &&
-			    protocol == cp->protocol) {
-				/* HIT */
-				atomic_inc(&cp->refcnt);
-				ct_unlock(hash);
-				return cp;
-			}
-		}
-	}
-	ct_unlock(hash);
-	return NULL;
+struct ip_vs_ca_conn *
+ip_vs_ca_conn_get(int af, __u8 protocol, const union nf_inet_addr *addr,
+                  __be16 port, int dir) {
+    unsigned hash;
+    struct ip_vs_ca_conn *cp;
+    
+    hash = ip_vs_ca_conn_hashkey(af, protocol, addr, port);
+    
+    ct_lock(hash);
+    
+    if (dir == IP_VS_CA_IN) {
+        list_for_each_entry(cp, &ip_vs_ca_conn_tab_s[hash], s_list) {
+            if (cp->af == af &&
+                ip_vs_ca_addr_equal(af, addr, &cp->s_addr) &&
+                port == cp->s_port &&
+                protocol == cp->protocol) {
+                    /* HIT */
+                    atomic_inc(&cp->refcnt);
+                    ct_unlock(hash);
+                    return cp;
+    	    }
+    	}
+    } else {
+        list_for_each_entry(cp, &ip_vs_ca_conn_tab_c[hash], c_list) {
+            if (cp->af == af &&
+                ip_vs_ca_addr_equal(af, addr, &cp->c_addr) &&
+                port == cp->c_port &&
+                protocol == cp->protocol) {
+              	    /* HIT */
+              	    atomic_inc(&cp->refcnt);
+              	    ct_unlock(hash);
+              	    return cp;
+            }
+    	}
+    }
+    ct_unlock(hash);
+    return NULL;
 }
 
-void ip_vs_ca_conn_put(struct ip_vs_ca_conn *cp)
-{
-	/* reset it expire in its timeout */
-	/* IP_VS_CA_DBG("mod_timer %lu\n", cp->timeout / HZ); */
-	mod_timer(&cp->timer, jiffies + cp->timeout);
-	__ip_vs_ca_conn_put(cp);
+void ip_vs_ca_conn_put(struct ip_vs_ca_conn *cp) {
+    /* reset it expire in its timeout */
+    /* IP_VS_CA_DBG("mod_timer %lu\n", cp->timeout / HZ); */
+    mod_timer(&cp->timer, jiffies + cp->timeout);
+    __ip_vs_ca_conn_put(cp);
 }
 
-static void ip_vs_ca_conn_expire_now(struct ip_vs_ca_conn *cp)
-{
-	IP_VS_CA_DBG("expire_now: timer(%p)\n", &cp->timer);
-	if (del_timer(&cp->timer))
-		mod_timer(&cp->timer, jiffies);
+static void ip_vs_ca_conn_expire_now(struct ip_vs_ca_conn *cp) {
+    IP_VS_CA_DBG("expire_now: timer(%p)\n", &cp->timer);
+    if (del_timer(&cp->timer))
+        mod_timer(&cp->timer, jiffies);
 }
 
 /*
  *      Flush all the connection entries in the ip_vs_ca_conn_tab
  */
-static void ip_vs_ca_conn_flush(void)
-{
-	int idx;
-	struct ip_vs_ca_conn *cp;
+static void ip_vs_ca_conn_flush(void) {
+    int idx;
+    struct ip_vs_ca_conn *cp;
 
 flush_again:
-	for (idx = 0; idx < IP_VS_CA_CONN_TAB_SIZE; idx++) {
-		/*
-		 *  Lock is actually needed in this loop.
-		 */
-		ct_lock(idx);
-
-		list_for_each_entry(cp, &ip_vs_ca_conn_tab_s[idx], s_list) {
-			IP_VS_CA_DBG("del connection\n");
-			ip_vs_ca_conn_expire_now(cp);
-		}
-		ct_unlock(idx);
-	}
+    for (idx = 0; idx < IP_VS_CA_CONN_TAB_SIZE; idx++) {
+        /*
+         *  Lock is actually needed in this loop.
+         */
+        ct_lock(idx);
+        
+        list_for_each_entry(cp, &ip_vs_ca_conn_tab_s[idx], s_list) {
+            IP_VS_CA_DBG("del connection\n");
+            ip_vs_ca_conn_expire_now(cp);
+        }
+        ct_unlock(idx);
+    }
 
 	/* the counter may be not NULL, because maybe some conn entries
 	   are run by slow timer handler or unhashed but still referred */
-	if (atomic_read(&ip_vs_ca_conn_count) != 0) {
-		schedule();
-		goto flush_again;
-	}
+    if (atomic_read(&ip_vs_ca_conn_count) != 0) {
+        schedule();
+        goto flush_again;
+    }
 }
 
-int __init ip_vs_ca_conn_init(void){
-	int idx;
-
-	ip_vs_ca_conn_tab_s = vmalloc(IP_VS_CA_CONN_TAB_SIZE *
-			(sizeof(struct list_head)));
-	if (!ip_vs_ca_conn_tab_s)
-		return -ENOMEM;
-
-	ip_vs_ca_conn_tab_c = vmalloc(IP_VS_CA_CONN_TAB_SIZE *
-			(sizeof(struct list_head)));
-	if (!ip_vs_ca_conn_tab_c)
-		return -ENOMEM;
-
-	/* Allocate ip_vs_ca_conn slab cache */
-	ip_vs_ca_conn_cachep = kmem_cache_create("ip_vs_ca_conn",
-					      sizeof(struct ip_vs_ca_conn),
-					      0, SLAB_HWCACHE_ALIGN, NULL);
-	if (!ip_vs_ca_conn_cachep) {
-		vfree(ip_vs_ca_conn_tab_s);
-		vfree(ip_vs_ca_conn_tab_c);
-		return -ENOMEM;
-	}
-
-	IP_VS_CA_INFO("Connection hash table configured "
-		"(size=%d, memory=%ldKbytes)\n",
-		IP_VS_CA_CONN_TAB_SIZE,
-		(long)(IP_VS_CA_CONN_TAB_SIZE * sizeof(struct list_head)) / 1024);
-
-	IP_VS_CA_DBG("Each connection entry needs %Zd bytes at least\n",
-		  sizeof(struct ip_vs_ca_conn));
-
-	for (idx = 0; idx < IP_VS_CA_CONN_TAB_SIZE; idx++) {
-		INIT_LIST_HEAD(&ip_vs_ca_conn_tab_s[idx]);
-		INIT_LIST_HEAD(&ip_vs_ca_conn_tab_c[idx]);
-	}
-
-	for (idx = 0; idx < CT_LOCKARRAY_SIZE; idx++) {
-		spin_lock_init(&__ip_vs_ca_conntbl_lock_array[idx].l);
-	}
-
-	/* calculate the random value for connection hash */
-	get_random_bytes(&ip_vs_ca_conn_rnd, sizeof(ip_vs_ca_conn_rnd));
-
-	return 0;
+int __init ip_vs_ca_conn_init(void) {
+    int idx;
+    
+    ip_vs_ca_conn_tab_s = vmalloc(IP_VS_CA_CONN_TAB_SIZE *
+    		(sizeof(struct list_head)));
+    if (!ip_vs_ca_conn_tab_s)
+    	return -ENOMEM;
+    
+    ip_vs_ca_conn_tab_c = vmalloc(IP_VS_CA_CONN_TAB_SIZE *
+    		(sizeof(struct list_head)));
+    if (!ip_vs_ca_conn_tab_c)
+    	return -ENOMEM;
+    
+    /* Allocate ip_vs_ca_conn slab cache */
+    ip_vs_ca_conn_cachep = kmem_cache_create("ip_vs_ca_conn",
+    				      sizeof(struct ip_vs_ca_conn),
+    				      0, SLAB_HWCACHE_ALIGN, NULL);
+    if (!ip_vs_ca_conn_cachep) {
+    	vfree(ip_vs_ca_conn_tab_s);
+    	vfree(ip_vs_ca_conn_tab_c);
+    	return -ENOMEM;
+    }
+    
+    IP_VS_CA_INFO("Connection hash table configured "
+    	"(size=%d, memory=%ldKbytes)\n",
+    	IP_VS_CA_CONN_TAB_SIZE,
+    	(long)(IP_VS_CA_CONN_TAB_SIZE * sizeof(struct list_head)) / 1024);
+    
+    IP_VS_CA_DBG("Each connection entry needs %Zd bytes at least\n",
+    	  sizeof(struct ip_vs_ca_conn));
+    
+    for (idx = 0; idx < IP_VS_CA_CONN_TAB_SIZE; idx++) {
+    	INIT_LIST_HEAD(&ip_vs_ca_conn_tab_s[idx]);
+    	INIT_LIST_HEAD(&ip_vs_ca_conn_tab_c[idx]);
+    }
+    
+    for (idx = 0; idx < CT_LOCKARRAY_SIZE; idx++) {
+    	spin_lock_init(&__ip_vs_ca_conntbl_lock_array[idx].l);
 }
 
-void ip_vs_ca_conn_cleanup(void)
-{
-	ip_vs_ca_conn_flush();
-	kmem_cache_destroy(ip_vs_ca_conn_cachep);
-	vfree(ip_vs_ca_conn_tab_s);
-	vfree(ip_vs_ca_conn_tab_c);
+/* calculate the random value for connection hash */
+get_random_bytes(&ip_vs_ca_conn_rnd, sizeof(ip_vs_ca_conn_rnd));
+
+return 0;
+}
+
+void ip_vs_ca_conn_cleanup(void) {
+    ip_vs_ca_conn_flush();
+    kmem_cache_destroy(ip_vs_ca_conn_cachep);
+    vfree(ip_vs_ca_conn_tab_s);
+    vfree(ip_vs_ca_conn_tab_c);
 }
