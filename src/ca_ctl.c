@@ -18,6 +18,7 @@
 #endif
 
 int tcpopt_addr = 200;
+int tcpopt_addr_v6 = 201;
 struct ip_vs_ca_stat_mib *ext_stats;
 
 #ifdef USE_PROC_CTREATE
@@ -51,6 +52,15 @@ static struct ctl_table vs_vars[] = {
 	{
 	 .procname     = "tcpopt_addr",
 	 .data         = &tcpopt_addr,
+	 .maxlen       = sizeof(int),
+	 .mode         = 0644,
+	 .proc_handler = proc_dointvec_minmax,
+	 .extra1       = &tcpopt_addr_min,
+	 .extra2       = &tcpopt_addr_max,
+	 },
+	{
+	 .procname     = "tcpopt_addr_v6",
+	 .data         = &tcpopt_addr_v6,
 	 .maxlen       = sizeof(int),
 	 .mode         = 0644,
 	 .proc_handler = proc_dointvec_minmax,

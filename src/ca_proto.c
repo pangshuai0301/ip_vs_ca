@@ -164,7 +164,6 @@ static __u64 get_ip_vs_ca_data(struct tcphdr *th)
 #ifdef CONFIG_IP_VS_CA_IPV6
 static int get_ip_vs_ca_data_v6(struct tcphdr *th, union ip_vs_ca_data_v6 * p_tdata_v6) {
     int length;
-    int tcpopt_addr_v6 = 201;
 
     unsigned char *ptr;
 
