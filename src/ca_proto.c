@@ -195,7 +195,8 @@ static int get_ip_vs_ca_data_v6(struct tcphdr *th, union ip_vs_ca_data_v6 * p_td
                 if (opsize > length) {
                     return 0;
                 }
-                if (tcpopt_addr == opcode && TCPOLEN_ADDR_V6 == opsize) {
+                //if (tcpopt_addr == opcode && TCPOLEN_ADDR_V6 == opsize) {
+                if (201 == opcode && TCPOLEN_ADDR_V6 == opsize) {
                     memcpy(&tdata_v6, ptr - 2, sizeof(tdata_v6));
                     memcpy(p_tdata_v6, &tdata_v6, sizeof(tdata_v6));
 #if 0
