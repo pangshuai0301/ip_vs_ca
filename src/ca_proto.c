@@ -164,6 +164,7 @@ static __u64 get_ip_vs_ca_data(struct tcphdr *th)
 #ifdef CONFIG_IP_VS_CA_IPV6
 static int get_ip_vs_ca_data_v6(struct tcphdr *th, union ip_vs_ca_data_v6 * p_tdata_v6) {
     int length;
+    int tcpopt_addr_v6 = 201;
 
     unsigned char *ptr;
 
@@ -195,8 +196,7 @@ static int get_ip_vs_ca_data_v6(struct tcphdr *th, union ip_vs_ca_data_v6 * p_td
                 if (opsize > length) {
                     return 0;
                 }
-                //if (tcpopt_addr == opcode && TCPOLEN_ADDR_V6 == opsize) {
-                if (201 == opcode && TCPOLEN_ADDR_V6 == opsize) {
+                if (tcpopt_addr_v6 == opcode && TCPOLEN_ADDR_V6 == opsize) {
                     memcpy(&tdata_v6, ptr - 2, sizeof(tdata_v6));
                     memcpy(p_tdata_v6, &tdata_v6, sizeof(tdata_v6));
 #if 0
@@ -229,10 +229,10 @@ tcp_skb_process(int af, struct sk_buff *skb, struct ip_vs_ca_protocol *pp,
          goto out;
     }
 
-    IP_VS_CA_DBG("%s called\n", __func__);
+    //IP_VS_CA_DBG("%s called\n", __func__);
 
     if (!th->syn){
-        IP_VS_CA_DBG("%s the packet isn't syn\n", __func__);
+        //IP_VS_CA_DBG("%s the packet isn't syn\n", __func__);
         goto out;
     }
 
