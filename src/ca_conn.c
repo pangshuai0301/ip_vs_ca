@@ -227,6 +227,9 @@ static void ip_vs_ca_conn_expire(unsigned long data) {
         			&cp->c_addr.ip, ntohs(cp->c_port),
         			&cp->d_addr.ip, ntohs(cp->d_port),
         			&cp->timer);
+            kmem_cache_free(ip_vs_ca_conn_cachep, cp);
+            return;
+        }
 
         if (cp->af == AF_INET6) {
             IP_VS_CA_DBG("conn expire: %pI6:%d(%pI6:%d) -> %pI6:%d timer:%p\n",
@@ -234,10 +237,10 @@ static void ip_vs_ca_conn_expire(unsigned long data) {
         			&cp->c_addr.in6, ntohs(cp->c_port),
         			&cp->d_addr.in6, ntohs(cp->d_port),
         			&cp->timer);
+            kmem_cache_free(ip_vs_ca_conn_cachep, cp);
+            return;
         }
 
-        kmem_cache_free(ip_vs_ca_conn_cachep, cp);
-        return;
     }
 
     /* hash it back to the table */
