@@ -517,8 +517,8 @@ ip_vs_ca_in_icmp_v6(struct sk_buff *skb, struct ip_vs_ca_iphdr iph) {
     if (ntohs(ih->payload_len) == sizeof(*icmph) + sizeof(*ca)
             && icmph->icmp6_type == ICMPV6_ECHO_REQUEST
             && icmph->icmp6_code == 0
-            && htons(icmph->icmp6_dataun.u_echo.identifier) == 0x1234
-            && htons(icmph->icmp6_dataun.u_echo.sequence) == 0) {
+            && ntohs(icmph->icmp6_dataun.u_echo.identifier) == 0x1234
+            && ntohs(icmph->icmp6_dataun.u_echo.sequence) == 0) {
         offset += sizeof(_icmph);
         ca = skb_header_pointer(skb, offset, sizeof(_ca), &_ca);
 
@@ -528,7 +528,7 @@ ip_vs_ca_in_icmp_v6(struct sk_buff *skb, struct ip_vs_ca_iphdr iph) {
         }
 
         if (ca->code != 123
-                || ca->toa.opcode != tcpopt_addr
+                || ca->toa.opcode != tcpopt_addr_v6
                 || ca->toa.opsize != TCPOLEN_ADDR_V6) {
             IP_VS_CA_DBG("ca6 not hit. {.code:%d, .protocol:%d,"
                     " .toa.opcode:%d, .toa.opsize:%d}\n",
@@ -561,8 +561,8 @@ ip_vs_ca_in_icmp_v6(struct sk_buff *skb, struct ip_vs_ca_iphdr iph) {
                 "want tot_len:%lu icmp.type:%d\n",
                 ntohs(ih->payload_len),
                 icmph->icmp6_type, icmph->icmp6_code,
-                htons(icmph->icmp6_dataun.u_echo.identifier),
-                htons(icmph->icmp6_dataun.u_echo.sequence),
+                ntohs(icmph->icmp6_dataun.u_echo.identifier),
+                ntohs(icmph->icmp6_dataun.u_echo.sequence),
                 sizeof(*icmph), sizeof(*ca),
                 sizeof(*icmph)+sizeof(*ca),
                 ICMPV6_ECHO_REQUEST);
