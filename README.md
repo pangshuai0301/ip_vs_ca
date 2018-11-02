@@ -23,6 +23,7 @@ get ip vs(fullnat) client addr
   - [x] Support centos 7.2 rpmbuild
   - [x] Support ubuntu 14.04(trusty) dpkg
   - [x] Support ubuntu 16.04.2(xenial) dpkg
+  - [x] Support IPv6 (20181102)
 
 ## Demo
 
