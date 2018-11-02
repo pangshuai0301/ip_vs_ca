@@ -28,6 +28,8 @@ static struct ctl_table_header *sysctl_header;
 extern int sysctl_ip_vs_ca_timeouts[IP_VS_CA_S_LAST + 1];
 static int tcpopt_addr_min = 0;
 static int tcpopt_addr_max = 255;
+static int tcpopt_addr_v6_min = 0;
+static int tcpopt_addr_v6_max = 255;
 
 /*
  *	IPVS sysctl table (under the /proc/sys/net/ca/)
@@ -64,8 +66,8 @@ static struct ctl_table vs_vars[] = {
 	 .maxlen       = sizeof(int),
 	 .mode         = 0644,
 	 .proc_handler = proc_dointvec_minmax,
-	 .extra1       = &tcpopt_addr_min,
-	 .extra2       = &tcpopt_addr_max,
+	 .extra1       = &tcpopt_addr_v6_min,
+	 .extra2       = &tcpopt_addr_v6_max,
 	 },
 	{.procname = 0}
 };

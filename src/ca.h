@@ -68,6 +68,7 @@
 
 /*#define TCPOPT_ADDR  254*/
 extern int tcpopt_addr;
+extern int tcpopt_addr_v6;
 /* MUST be 4n !!!! */
 #define TCPOLEN_ADDR 8		/* |opcode|size|ip+port| = 1 + 1 + 6 */
 
