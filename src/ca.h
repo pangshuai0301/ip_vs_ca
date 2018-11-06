@@ -65,7 +65,7 @@ extern int tcpopt_addr;
 extern int tcpopt_addr_v6;
 
 #define TCPOLEN_ADDR 8      /* |opcode|size|ip+port| = 1 + 1 + 6 */
-#ifdef
+#ifdef CONFIG_IP_VS_CA_IPV6
 #define TCPOLEN_ADDR_V6 20  /* |opcode|size|port|ipv6 = 1 + 1 + 2 + 16 */
 #endif
 
