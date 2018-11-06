@@ -31,24 +31,24 @@ int sysctl_ip_vs_ca_timeouts[IP_VS_CA_S_LAST + 1] = {
 static struct ip_vs_ca_protocol *ip_vs_ca_proto_table[IP_VS_CA_PROTO_TAB_SIZE];
 
 static struct ip_vs_ca_conn *tcpudp_conn_get(int af, const struct sk_buff *skb,
-		struct ip_vs_ca_protocol *pp,
-		const struct ip_vs_ca_iphdr *iph,
-		unsigned int proto_off)
+            struct ip_vs_ca_protocol *pp,
+            const struct ip_vs_ca_iphdr *iph,
+            unsigned int proto_off)
 {
     __be16 _ports[2], *pptr;
 
     pptr = skb_header_pointer(skb, proto_off, sizeof(_ports), _ports);
     if (pptr == NULL)
-    	return NULL;
+        return NULL;
 
     return ip_vs_ca_conn_get(af, iph->protocol, &iph->saddr, pptr[0], IP_VS_CA_IN);
 }
 
 static int tcpudp_icmp_process(int af, struct sk_buff *skb,
-		struct ip_vs_ca_protocol *pp,
-		const struct ip_vs_ca_iphdr *iph,
-		struct ipvs_ca *ca,
-        int *verdict, struct ip_vs_ca_conn **cpp)
+            struct ip_vs_ca_protocol *pp,
+            const struct ip_vs_ca_iphdr *iph,
+            struct ipvs_ca *ca,
+            int *verdict, struct ip_vs_ca_conn **cpp)
 {
     //create cp
     union nf_inet_addr caddr;
@@ -56,8 +56,9 @@ static int tcpudp_icmp_process(int af, struct sk_buff *skb,
     caddr.ip = ca->toa.addr;
     *cpp = ip_vs_ca_conn_new(af, pp,
                 &iph->saddr, ca->sport,
-		&iph->daddr, ca->dport,
-                &caddr, ca->toa.port, skb);
+                &iph->daddr, ca->dport,
+                &caddr, ca->toa.port,
+                skb);
 
     if (*cpp == NULL){
         goto out;
@@ -75,18 +76,18 @@ out:
 
 #ifdef CONFIG_IP_VS_CA_IPV6
 static int tcpudp_icmp_process_v6(int af, struct sk_buff *skb,
-                struct ip_vs_ca_protocol *pp,
-                const struct ip_vs_ca_iphdr *iph,
-                struct ipvs_ca_v6 *ca,
-                int *verdict, struct ip_vs_ca_conn **cpp)
+            struct ip_vs_ca_protocol *pp,
+            const struct ip_vs_ca_iphdr *iph,
+            struct ipvs_ca_v6 *ca,
+            int *verdict, struct ip_vs_ca_conn **cpp)
 {
     IP_VS_CA_INC_STATS(ext_stats, SYN_RECV_SOCK_IP_VS_CA_CNT);
     //create cp
     *cpp = ip_vs_ca_conn_new(af, pp,
-                    &iph->saddr, ca->sport,
-                    &iph->daddr, ca->dport,
-                    &ca->toa.addr, ca->toa.port,
-                    skb);
+                &iph->saddr, ca->sport,
+                &iph->daddr, ca->dport,
+                &ca->toa.addr, ca->toa.port,
+                skb);
 
     if (*cpp == NULL){
             goto out;
@@ -131,7 +132,7 @@ static __u64 get_ip_vs_ca_data(struct tcphdr *th)
         switch (opcode) {
             case TCPOPT_EOL:
                 return 0;
-            case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
+            case TCPOPT_NOP:    /* Ref: RFC 793 section 3.1 */
                 length--;
                 continue;
             default:
@@ -145,11 +146,11 @@ static __u64 get_ip_vs_ca_data(struct tcphdr *th)
                     memcpy(&tdata.data, ptr - 2, sizeof(tdata.data));
 #if 0
                     IP_VS_CA_DBG("find toa data: ip = "
-                    		"%pI4, port = %u\n",
-                    		&tdata.tcp.addr,
-                    		ntohs(tdata.tcp.port));
+                            "%pI4, port = %u\n",
+                            &tdata.tcp.addr,
+                            ntohs(tdata.tcp.port));
                     IP_VS_CA_DBG("coded toa data: %llx\n",
-                    		tdata.data);
+                            tdata.data);
 #endif
                     return tdata.data;
                 }
@@ -162,7 +163,8 @@ static __u64 get_ip_vs_ca_data(struct tcphdr *th)
 }
 
 #ifdef CONFIG_IP_VS_CA_IPV6
-static int get_ip_vs_ca_data_v6(struct tcphdr *th, union ip_vs_ca_data_v6 * p_tdata_v6) {
+static int get_ip_vs_ca_data_v6(struct tcphdr *th, union ip_vs_ca_data_v6 * p_tdata_v6)
+{
     int length;
 
     unsigned char *ptr;
@@ -198,9 +200,6 @@ static int get_ip_vs_ca_data_v6(struct tcphdr *th, union ip_vs_ca_data_v6 * p_td
                 if (tcpopt_addr_v6 == opcode && TCPOLEN_ADDR_V6 == opsize) {
                     memcpy(&tdata_v6, ptr - 2, sizeof(tdata_v6));
                     memcpy(p_tdata_v6, &tdata_v6, sizeof(tdata_v6));
-#if 0
-                    IP_VS_CA_DBG("ip_vs_ca_data_v6 get data success\n");
-#endif
                     return 1;
                 }
                 ptr += opsize - 2;
@@ -213,8 +212,8 @@ static int get_ip_vs_ca_data_v6(struct tcphdr *th, union ip_vs_ca_data_v6 * p_td
 
 static int
 tcp_skb_process(int af, struct sk_buff *skb, struct ip_vs_ca_protocol *pp,
-		const struct ip_vs_ca_iphdr *iph,
-		int *verdict, struct ip_vs_ca_conn **cpp)
+            const struct ip_vs_ca_iphdr *iph,
+            int *verdict, struct ip_vs_ca_conn **cpp)
 {
     struct tcphdr _tcph, *th;
     union ip_vs_ca_data tdata = {.data = 0};
@@ -231,7 +230,6 @@ tcp_skb_process(int af, struct sk_buff *skb, struct ip_vs_ca_protocol *pp,
     //IP_VS_CA_DBG("%s called\n", __func__);
 
     if (!th->syn){
-        //IP_VS_CA_DBG("%s the packet isn't syn\n", __func__);
         goto out;
     }
 
@@ -306,9 +304,9 @@ struct ip_vs_ca_protocol ip_vs_ca_protocol_tcp = {
  */
 
 static int udp_skb_process(int af, struct sk_buff *skb,
-		struct ip_vs_ca_protocol *pp,
-		const struct ip_vs_ca_iphdr *iph,
-		int *verdict, struct ip_vs_ca_conn **cpp)
+        struct ip_vs_ca_protocol *pp,
+        const struct ip_vs_ca_iphdr *iph,
+        int *verdict, struct ip_vs_ca_conn **cpp)
 {
     if (false){
         *cpp = NULL;
@@ -333,7 +331,7 @@ struct ip_vs_ca_protocol ip_vs_ca_protocol_udp = {
 
 
 /*
- *	get ip_vs_ca_protocol object by its proto.
+ *  get ip_vs_ca_protocol object by its proto.
  */
 struct ip_vs_ca_protocol *ip_vs_ca_proto_get(unsigned short proto)
 {

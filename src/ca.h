@@ -5,79 +5,77 @@
 #include <linux/netfilter.h>
 #include <linux/netfilter_ipv4.h>
 #include <linux/ip.h>
-#include <linux/ipv6.h>		/* for struct ipv6hdr */
-#include <net/ipv6.h>		/* for ipv6_addr_copy */
-#include <net/icmp.h>		/* for icmp_send */
+#include <linux/ipv6.h>     /* for struct ipv6hdr */
+#include <net/ipv6.h>       /* for ipv6_addr_copy */
+#include <net/icmp.h>       /* for icmp_send */
 
 #ifndef IP_VS_CA_VERSION
 #define IP_VS_CA_VERSION "0.1.*"
 #endif
 
-/*#define IP_VS_CA_DEBUG*/
-
 #define IP_VS_CA_CONN_TAB_BITS     8
 #define IP_VS_CA_CONN_TAB_SIZE     (1 << IP_VS_CA_CONN_TAB_BITS)
 #define IP_VS_CA_CONN_TAB_MASK     (IP_VS_CA_CONN_TAB_SIZE - 1)
 
-#define IP_VS_CA_CONN_F_HASHED		0x0040		/* hashed entry */
-#define IP_VS_CA_CONN_F_ONE_PACKET	0x2000		/* forward only one packet */
+#define IP_VS_CA_CONN_F_HASHED      0x0040      /* hashed entry */
+#define IP_VS_CA_CONN_F_ONE_PACKET  0x2000       /* forward only one packet */
 
 #define IP_VS_CA_GET_IP(sin) (((struct sockaddr_in *)&sin)->sin_addr.s_addr)
 #define IP_VS_CA_GET_IP_V6(sin) (((struct sockaddr_in6 *)&sin)->sin6_addr)
 #define IP_VS_CA_GET_PORT(sin) (((struct sockaddr_in *)&sin)->sin_port)
 #define IP_VS_CA_GET_PORT_V6(sin) (((struct sockaddr_in6 *)&sin)->sin6_port)
 
-#define IP_VS_CA_ERR(msg...)					\
-	do {							\
-		printk(KERN_ERR "[ERR] IP_VS_CA: " msg);	\
-	} while (0)
+#define IP_VS_CA_ERR(msg...)                    \
+    do {                           \
+        printk(KERN_ERR "[ERR] IP_VS_CA: " msg);  \
+    } while (0)
 
 #ifdef IP_VS_CA_DEBUG
-#define EnterFunction()						\
-	do {							\
-			printk(KERN_DEBUG			\
-			pr_fmt("Enter: %s, %s line %i\n"),	\
-				__func__, __FILE__, __LINE__);	\
-	} while (0)
-#define LeaveFunction()						\
-	do {							\
-		printk(KERN_DEBUG				\
-			pr_fmt("Leave: %s, %s line %i\n"),	\
-			__func__, __FILE__, __LINE__);		\
-	} while (0)
-#define IP_VS_CA_DBG(msg...)					\
-	do {							\
-		if (net_ratelimit())				\
-		printk(KERN_DEBUG "[DEBUG] IP_VS_CA: " msg);	\
-	} while (0)
+#define EnterFunction()                     \
+	do {                               \
+            printk(KERN_DEBUG            \
+            pr_fmt("Enter: %s, %s line %i\n"),   \
+                __func__, __FILE__, __LINE__);   \
+    } while (0)
+#define LeaveFunction()                     \
+    do {                            \
+        printk(KERN_DEBUG               \
+            pr_fmt("Leave: %s, %s line %i\n"),  \
+            __func__, __FILE__, __LINE__);      \
+    } while (0)
+#define IP_VS_CA_DBG(msg...)                    \
+    do {                           \
+        if (net_ratelimit())                      \
+            printk(KERN_DEBUG "[DEBUG] IP_VS_CA: " msg);  \
+    } while (0)
 
-#define IP_VS_CA_INFO(msg...)					\
-	do {							\
-		if (net_ratelimit())				\
-		printk(KERN_INFO "[INFO] IP_VS_CA: " msg);	\
-	} while (0)
+#define IP_VS_CA_INFO(msg...)                   \
+    do {                           \
+        if (net_ratelimit())              \
+            printk(KERN_INFO "[INFO] IP_VS_CA: " msg);  \
+    } while (0)
 #else
-
 #define EnterFunction()  do {} while (0)
 #define LeaveFunction()  do {} while (0)
 #define IP_VS_CA_DBG(msg...)  do {} while (0)
 #define IP_VS_CA_INFO(msg...)  do {} while (0)
-
-
 #endif
 
-/*#define TCPOPT_ADDR  254*/
 extern int tcpopt_addr;
 extern int tcpopt_addr_v6;
-/* MUST be 4n !!!! */
-#define TCPOLEN_ADDR 8		/* |opcode|size|ip+port| = 1 + 1 + 6 */
+
+#define TCPOLEN_ADDR 8      /* |opcode|size|ip+port| = 1 + 1 + 6 */
+#ifdef
+#define TCPOLEN_ADDR_V6 20  /* |opcode|size|port|ipv6 = 1 + 1 + 2 + 16 */
+#endif
 
 struct ip_vs_ca_conn;
 struct ip_vs_ca_iphdr;
 struct ip_vs_ca_conn;
 
-/* kernel 2.6 net/ipv6.h obtain
- * kernel 3.18 not hava
+/* 
+ * ipv6_addr_copy has defined in kernel 2.6，
+ * but not defined in kernel 3.10 and later
  */
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
 static inline void ipv6_addr_copy(struct in6_addr *a1, const struct in6_addr *a2)
@@ -87,7 +85,7 @@ static inline void ipv6_addr_copy(struct in6_addr *a1, const struct in6_addr *a2
 #endif
 
 static inline void ip_vs_ca_addr_copy(int af, union nf_inet_addr *dst,
-				   const union nf_inet_addr *src)
+                  const union nf_inet_addr *src)
 {
 #ifdef CONFIG_IP_VS_CA_IPV6
     if (af == AF_INET6)
@@ -97,27 +95,15 @@ static inline void ip_vs_ca_addr_copy(int af, union nf_inet_addr *dst,
         dst->ip = src->ip;
 }
 
-
 static inline int ip_vs_ca_addr_equal(int af, const union nf_inet_addr *a,
-				   const union nf_inet_addr *b)
+                   const union nf_inet_addr *b)
 {
 #ifdef CONFIG_IP_VS_CA_IPV6
     if (af == AF_INET6)
         return ipv6_addr_equal(&a->in6, &b->in6);
 #endif
-    return a->ip == b->ip;
+        return a->ip == b->ip;
 }
-
-/*
- * note:
- * union nf_inet_addr {
- *     __u32    all[4];
- *     __be32   ip;
- *     __be32   ip6[4];
- *     struct in_addr   in;
- *     struct in6_addr  in6;
- * };
- */
 
 struct ip_vs_ca_iphdr {
     int len;
@@ -147,9 +133,8 @@ ip_vs_ca_fill_iphdr(int af, const void *nh, struct ip_vs_ca_iphdr *iphdr)
     }
 }
 
-
 /*
- *	IP_VS_CA structure allocated for each connection
+ *  IP_VS_CA structure allocated for each connection
  */
 struct ip_vs_ca_conn {
     struct list_head s_list;         /* hashed list heads for s_addr(lvs local ip) */
@@ -170,9 +155,9 @@ struct ip_vs_ca_conn {
     volatile unsigned long timeout;  /* timeout */
     
     /* Flags and state transition */
-    spinlock_t lock;	/* lock for state transition */
-    volatile __u16 flags;	/* status flags */
-    volatile __u16 state;	/* state info */
+    spinlock_t lock;                 /* lock for state transition */
+    volatile __u16 flags;            /* status flags */
+    volatile __u16 state;            /* state info */
     volatile __u16 old_state;
 };
 
@@ -184,38 +169,13 @@ struct ip_vs_tcpo_addr {
     __u32 addr;
 } __attribute__((__packed__));
 
-
-#ifdef CONFIG_IP_VS_CA_IPV6
-#define TCPOLEN_ADDR_V6 20 /* |opcode|size|port|ipv6 = 1 + 1 + 2 + 16 */
-
-/*
- * insert client ip in tcp option, for ipv6 must be 4 bytes alignment
- */
-struct ip_vs_tcpo_addr_v6 {
-    __u8 opcode;
-    __u8 opsize;
-    __be16 port;
-    union nf_inet_addr addr;
-} __attribute__((__packed__));
-#endif
-
 struct ipvs_ca {
-    __u8 code;			/* magic code */
-    __u8 protocol;		/* Which protocol (TCP/UDP) */
+    __u8 code;          /* magic code */
+    __u8 protocol;      /* Which protocol (TCP/UDP) */
     __be16 sport;
     __be16 dport;
     struct ip_vs_tcpo_addr toa;
 } __attribute__((__packed__));
-
-#ifdef CONFIG_IP_VS_CA_IPV6
-struct ipvs_ca_v6 {
-    __u8 code;
-    __u8 protocol;
-    __be16 sport;
-    __be16 dport;
-    struct ip_vs_tcpo_addr_v6 toa;
-} __attribute__((__packed__));
-#endif
 
 union ip_vs_ca_data {
     __u64 data;
@@ -223,8 +183,26 @@ union ip_vs_ca_data {
 };
 
 #ifdef CONFIG_IP_VS_CA_IPV6
+/*
+ * MUST be 4 bytes alignment
+ */
+struct ip_vs_tcpo_addr_v6 {
+    __u8 opcode;
+    __u8 opsize;
+    __be16 port;
+    union nf_inet_addr addr;
+} __attribute__((__packed__));
+
+struct ipvs_ca_v6 {
+    __u8 code;
+    __u8 protocol;
+    __be16 sport;
+    __be16 dport;
+    struct ip_vs_tcpo_addr_v6 toa;
+} __attribute__((__packed__));
+
 union ip_vs_ca_data_v6 {
-    __u64 data; /* !!! 20 * 8 bits */
+    __u64 data; /* 20 * 8 bits */
     struct ip_vs_tcpo_addr_v6 tcp;
 };
 #endif
@@ -249,28 +227,27 @@ enum {
     IP_VS_CA_OUT        /* out c_addr -> s_addr */
 };
 
-
 struct ip_vs_ca_stats_entry {
     char *name;
     int entry;
 };
 
-#define IP_VS_CA_STAT_ITEM(_name, _entry) {	\
-	.name = _name,				\
-	.entry = _entry,			\
+#define IP_VS_CA_STAT_ITEM(_name, _entry) { \
+    .name = _name,              \
+    .entry = _entry,            \
 }
 
-#define IP_VS_CA_STAT_END {	\
-	NULL,			\
-	0,			\
+#define IP_VS_CA_STAT_END { \
+    NULL,           \
+    0,          \
 }
 
 struct ip_vs_ca_stat_mib {
-	unsigned long mibs[IP_VS_CA_STAT_LAST];
+    unsigned long mibs[IP_VS_CA_STAT_LAST];
 };
 
 #define IP_VS_CA_INC_STATS(mib, field)         \
-	(per_cpu_ptr(mib, smp_processor_id())->mibs[field]++)
+    (per_cpu_ptr(mib, smp_processor_id())->mibs[field]++)
 
 struct syscall_links {
     asmlinkage long (*getpeername)(int, struct sockaddr __user *, int __user *);
@@ -289,19 +266,19 @@ struct ip_vs_ca_protocol {
     __u8 protocol;
     u16 num_states;
     int dont_defrag;
-    atomic_t appcnt;	/* counter of proto app incs */
-    int *timeout;		/* protocol timeout table */
+    atomic_t appcnt;    /* counter of proto app incs */
+    int *timeout;       /* protocol timeout table */
 
     int (*skb_process) (int af, struct sk_buff * skb,
-    		      struct ip_vs_ca_protocol * pp,
-    		      const struct ip_vs_ca_iphdr * iph,
-    		      int *verdict, struct ip_vs_ca_conn ** cpp);
+                  struct ip_vs_ca_protocol * pp,
+                  const struct ip_vs_ca_iphdr * iph,
+                  int *verdict, struct ip_vs_ca_conn ** cpp);
 
     int (*icmp_process) (int af, struct sk_buff * skb,
-    		      struct ip_vs_ca_protocol * pp,
-    		      const struct ip_vs_ca_iphdr * iph,
-    			  struct ipvs_ca *ca,
-    		      int *verdict, struct ip_vs_ca_conn ** cpp);
+                  struct ip_vs_ca_protocol * pp,
+                  const struct ip_vs_ca_iphdr * iph,
+                  struct ipvs_ca *ca,
+                  int *verdict, struct ip_vs_ca_conn ** cpp);
 
 #ifdef CONFIG_IP_VS_CA_IPV6
     int (*icmp_process_v6) (int af, struct sk_buff * skb,
@@ -313,9 +290,9 @@ struct ip_vs_ca_protocol {
 
     struct ip_vs_ca_conn *
         (*conn_get) (int af, const struct sk_buff * skb,
-		      struct ip_vs_ca_protocol * pp,
-		      const struct ip_vs_ca_iphdr * iph,
-		      unsigned int proto_off);
+              struct ip_vs_ca_protocol * pp,
+              const struct ip_vs_ca_iphdr * iph,
+              unsigned int proto_off);
 
 };
 
@@ -329,13 +306,13 @@ extern void ip_vs_ca_conn_cleanup(void);
 extern void ip_vs_ca_conn_put(struct ip_vs_ca_conn *cp);
 extern void ip_vs_ca_conn_cleanup(void);
 extern struct ip_vs_ca_conn *ip_vs_ca_conn_get(int af, __u8 protocol,
-	        const union nf_inet_addr *s_addr, __be16 s_port, int dir);
+            const union nf_inet_addr *s_addr, __be16 s_port, int dir);
 struct ip_vs_ca_conn *ip_vs_ca_conn_new(int af,
-					struct ip_vs_ca_protocol *pp,
+                    struct ip_vs_ca_protocol *pp,
                     const union nf_inet_addr *saddr, __be16 sport,
                     const union nf_inet_addr *daddr, __be16 dport,
                     const union nf_inet_addr *caddr, __be16 cport,
-					struct sk_buff *skb);
+                    struct sk_buff *skb);
 
 extern int ip_vs_ca_protocol_init(void);
 extern void ip_vs_ca_protocol_cleanup(void);

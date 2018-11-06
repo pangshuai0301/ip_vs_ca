@@ -17,6 +17,7 @@
 #include <linux/netfilter_ipv6.h>
 #include <linux/ipv6.h>
 #endif
+
 #include "ca.h"
 
 
@@ -51,10 +52,11 @@ ip_vs_ca_modify_uaddr(int fd, struct sockaddr *uaddr, int len, int dir) {
     }
 
 #ifdef CONFIG_IP_VS_CA_IPV6
-    if (sin.ss_family != AF_INET && sin.ss_family != AF_INET6) {
+    if (sin.ss_family != AF_INET && sin.ss_family != AF_INET6) 
 #else
-    if (sin.ss_family != AF_INET) {
+    if (sin.ss_family != AF_INET) 
 #endif
+    {
         ret = -3;
         goto out;
     }
@@ -65,49 +67,6 @@ ip_vs_ca_modify_uaddr(int fd, struct sockaddr *uaddr, int len, int dir) {
         goto out;
     }
 
-    /*
-     * note:
-     * struct sockaddr_in
-     * {
-     *     sa_family_t          sin_family;      // address family
-     *     uint16_t             sin_port;        // tcp/udp port(16 bits)
-     *     struct in_addr       sin_addr;        // ip addr (32 bits)
-     *     char                 sin_zero[8];     // Pad to size of `struct sockaddr'
-     * }
-     * struct sockaddr_in6
-     * {
-     *     unsigned short int   sin6_family;     // AF_INET6
-     *     __be16               sin6_port;       // Transport layer port #
-     *     __be32               sin6_flowinfo;   // IPv6 flow information
-     *     struct in6_addr      sin6_addr;       // IPv6 address
-     *     __u32                sin6_scope_id;   // scope id (new in RFC2553)
-     * };
-     * union nf_inet_addr {
-     *     __u32    all[4];
-     *     __be32   ip;
-     *     __be32   ip6[4];
-     *     struct in_addr   in;
-     *     struct in6_addr  in6;
-     * };
-     * struct in_addr {
-     *         __be32  s_addr;
-     * };
-     * struct in6_addr {
-     *         union {
-     *                 __u8            u6_addr8[16];
-     * #if __UAPI_DEF_IN6_ADDR_ALT
-     *                 __be16          u6_addr16[8];
-     *                 __be32          u6_addr32[4];
-     * #endif
-     *         } in6_u;
-     * #define s6_addr                 in6_u.u6_addr8
-     * #if __UAPI_DEF_IN6_ADDR_ALT
-     * #define s6_addr16               in6_u.u6_addr16
-     * #define s6_addr32               in6_u.u6_addr32
-     * #endif
-     * };
-     */
-
 #ifdef CONFIG_IP_VS_CA_IPV6
     if (sin.ss_family == AF_INET6)
         addr.in6 = IP_VS_CA_GET_IP_V6(sin);
@@ -116,6 +75,7 @@ ip_vs_ca_modify_uaddr(int fd, struct sockaddr *uaddr, int len, int dir) {
         addr.ip = IP_VS_CA_GET_IP(sin);
 
     if (sock->type == SOCK_STREAM){
+
 #ifdef CONFIG_IP_VS_CA_IPV6
         if (sin.ss_family == AF_INET6)
             cp = ip_vs_ca_conn_get(sin.ss_family, IPPROTO_TCP, &addr,
@@ -123,20 +83,23 @@ ip_vs_ca_modify_uaddr(int fd, struct sockaddr *uaddr, int len, int dir) {
         else
 #endif
             cp = ip_vs_ca_conn_get(sin.ss_family, IPPROTO_TCP, &addr,
-				    IP_VS_CA_GET_PORT(sin), dir);
+                    IP_VS_CA_GET_PORT(sin), dir);
+
     } else if (sock->type == SOCK_DGRAM) {
+
 #ifdef CONFIG_IP_VS_CA_IPV6
         if (sin.ss_family == AF_INET6)
-	    cp = ip_vs_ca_conn_get(sin.ss_family, IPPROTO_UDP, &addr,
-	                 IP_VS_CA_GET_PORT_V6(sin), dir);
+            cp = ip_vs_ca_conn_get(sin.ss_family, IPPROTO_UDP, &addr,
+                    IP_VS_CA_GET_PORT_V6(sin), dir);
         else
 #endif
             cp = ip_vs_ca_conn_get(sin.ss_family, IPPROTO_UDP, &addr,
-                         IP_VS_CA_GET_PORT(sin), dir);
-	} else {
-	    ret = -5;
-	    goto out;
-	}
+                    IP_VS_CA_GET_PORT(sin), dir);
+
+    } else {
+        ret = -5;
+        goto out;
+    }
 
 #ifdef CONFIG_IP_VS_CA_IPV6
     if (sin.ss_family == AF_INET6)
@@ -146,10 +109,10 @@ ip_vs_ca_modify_uaddr(int fd, struct sockaddr *uaddr, int len, int dir) {
                     cp ? "hit" : "not hit");
     else
 #endif
-	IP_VS_CA_DBG("lookup type:%d %pI4:%d %s\n",
-		    sock->type,
-		    &addr.ip, ntohs(IP_VS_CA_GET_PORT(sin)),
-		    cp ? "hit" : "not hit");
+        IP_VS_CA_DBG("lookup type:%d %pI4:%d %s\n",
+                    sock->type,
+                    &addr.ip, ntohs(IP_VS_CA_GET_PORT(sin)),
+                    cp ? "hit" : "not hit");
 
     if (!cp) {
         ret = -6;
@@ -157,23 +120,27 @@ ip_vs_ca_modify_uaddr(int fd, struct sockaddr *uaddr, int len, int dir) {
     }
 
     if (dir == IP_VS_CA_IN) {
+
 #ifdef CONFIG_IP_VS_CA_IPV6
         if (sin.ss_family == AF_INET6) {
             IP_VS_CA_GET_IP_V6(sin) = cp->c_addr.in6;
             IP_VS_CA_GET_PORT_V6(sin) = cp->c_port;
         } else
 #endif
+
         {
             IP_VS_CA_GET_IP(sin) = cp->c_addr.ip;
             IP_VS_CA_GET_PORT(sin) = cp->c_port;
         }
     } else {
+
 #ifdef CONFIG_IP_VS_CA_IPV6
         if (sin.ss_family == AF_INET6) {
             IP_VS_CA_GET_IP_V6(sin) = cp->s_addr.in6;
             IP_VS_CA_GET_PORT_V6(sin) = cp->s_port;
         } else
 #endif
+
         {
             IP_VS_CA_GET_IP(sin) = cp->s_addr.ip;
             IP_VS_CA_GET_PORT(sin) = cp->s_port;
@@ -223,7 +190,7 @@ out:
 
 asmlinkage static long
 accept4(int fd, struct sockaddr __user *upeer_sockaddr,
-		int __user *upeer_addrlen, int flags)
+        int __user *upeer_addrlen, int flags)
 {
     int ret, len;
 
@@ -234,7 +201,6 @@ accept4(int fd, struct sockaddr __user *upeer_sockaddr,
 
     ret = sys.accept4(fd, upeer_sockaddr, upeer_addrlen, flags);
     if (ret < 0){
-        //IP_VS_CA_DBG("accept4 (%d, %p, %d, %d) ret:%d\n", fd, upeer_sockaddr, *upeer_addrlen, flags, ret);
         goto out;
     }
 
@@ -255,7 +221,7 @@ accept(int fd, struct sockaddr __user *upeer_sockaddr, int __user *upeer_addrlen
 
 asmlinkage static long
 recvfrom(int fd, void __user *ubuf, size_t size, unsigned flags,
-				struct sockaddr __user *addr, int __user *addr_len)
+                struct sockaddr __user *addr, int __user *addr_len)
 {
     int ret, len;
 
@@ -301,7 +267,7 @@ connect(int fd, struct sockaddr __user *uservaddr, int addrlen)
 
 asmlinkage static long
 sendto(int fd, void __user *buff, size_t len, unsigned int flags,
-			struct sockaddr __user *addr, int addr_len)
+            struct sockaddr __user *addr, int addr_len)
 {
     int ret;
 
@@ -373,7 +339,7 @@ static int ip_vs_ca_syscall_init(void)
 static void ip_vs_ca_syscall_cleanup(void)
 {
     if (!sys_call_table){
-    	return;
+        return;
     }
 
     write_cr0(original_cr0 & ~0x00010000);
@@ -397,17 +363,17 @@ static unsigned int ip_vs_ca_in_icmp_v6(struct sk_buff *skb, struct ip_vs_ca_iph
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
 static unsigned int
 ip_vs_ca_in_hook(const struct nf_hook_ops *ops, struct sk_buff *skb,
-			const struct net_device *in,
-			const struct net_device *out,
-			const void *ignore)
+            const struct net_device *in,
+            const struct net_device *out,
+            const void *ignore)
 {
     return _ip_vs_ca_in_hook(skb);
 }
 #else
 static unsigned int
 ip_vs_ca_in_hook(unsigned int hooknum, struct sk_buff *skb,
-		const struct net_device *in, const struct net_device *out,
-		int (*okfn) (struct sk_buff *))
+        const struct net_device *in, const struct net_device *out,
+        int (*okfn) (struct sk_buff *))
 {
     return _ip_vs_ca_in_hook(skb);
 }
@@ -436,10 +402,10 @@ ip_vs_ca_in_icmp(struct sk_buff *skb, struct ip_vs_ca_iphdr iph) {
     }
 
     if (ntohs(ih->tot_len) == sizeof(*ih) + sizeof(*icmph) + sizeof(*ca)
-             && icmph->type == ICMP_ECHO
-             && icmph->code == 0
-             && icmph->un.echo.id == 0x1234
-             && icmph->un.echo.sequence == 0) {
+            && icmph->type == ICMP_ECHO
+            && icmph->code == 0
+            && icmph->un.echo.id == 0x1234
+            && icmph->un.echo.sequence == 0) {
         ca = skb_header_pointer(skb, iph.len + sizeof(*icmph), sizeof(_ca), &_ca);
 
         if (ca == NULL) {
@@ -584,7 +550,7 @@ static unsigned int _ip_vs_ca_in_hook(struct sk_buff *skb)
     af = (skb->protocol == htons(ETH_P_IP)) ? AF_INET : AF_INET6;
 
     if (af != AF_INET && af != AF_INET6) {
-    	goto out;
+        goto out;
     }
 
     ip_vs_ca_fill_iphdr(af, skb_network_header(skb), &iph);
@@ -594,27 +560,27 @@ static unsigned int _ip_vs_ca_in_hook(struct sk_buff *skb)
      *      Don't handle local packets on IPv6 for now
      */
     if (unlikely(skb->pkt_type != PACKET_HOST)) {
-    	/*
-    	IP_VS_CA_DBG("packet type=%d proto=%d daddr=%pI4 ignored\n",
-    			skb->pkt_type,
-    			iph.protocol, &iph.daddr.ip);
-    	*/
-    	goto out;
+        /*
+        IP_VS_CA_DBG("packet type=%d proto=%d daddr=%pI4 ignored\n",
+                skb->pkt_type,
+                iph.protocol, &iph.daddr.ip);
+        */
+        goto out;
     }
 
 #ifdef CONFIG_IP_VS_CA_IPV6
-    if (af == AF_INET6) {
-        if (iph.protocol == IPPROTO_ICMPV6) {
-            int v;
-            v = ip_vs_ca_in_icmp_v6(skb, iph);
-            IP_VS_CA_DBG("icmp_v6 return v:%d af:%d, protocol:%d\n",
-                    v, af, iph.protocol);
-            if (v == NF_ACCEPT)
-                goto out;
-            else
-                return v;
-        }
+    //if (af == AF_INET6) {
+    if (iph.protocol == IPPROTO_ICMPV6) {
+        int v;
+        v = ip_vs_ca_in_icmp_v6(skb, iph);
+        IP_VS_CA_DBG("icmp_v6 return v:%d af:%d, protocol:%d\n",
+                v, af, iph.protocol);
+        if (v == NF_ACCEPT)
+            goto out;
+        else
+            return v;
     }
+    //}
 #endif
     if (iph.protocol == IPPROTO_ICMP) {
         int v;
@@ -687,8 +653,8 @@ static int __init ip_vs_ca_init(void)
 
     ret = ip_vs_ca_syscall_init();
     if (ret < 0){
-    	IP_VS_CA_ERR("can't modify syscall table.\n");
-    	goto out_err;
+        IP_VS_CA_ERR("can't modify syscall table.\n");
+        goto out_err;
     }
     IP_VS_CA_DBG("modify syscall table done.\n");
 
@@ -697,22 +663,22 @@ static int __init ip_vs_ca_init(void)
 
     ret = ip_vs_ca_control_init();
     if (ret < 0){
-    	IP_VS_CA_ERR("can't modify syscall table.\n");
-    	goto cleanup_syscall;
+        IP_VS_CA_ERR("can't modify syscall table.\n");
+        goto cleanup_syscall;
     }
     IP_VS_CA_DBG("ip_vs_ca_control_init done.\n");
 
     ret = ip_vs_ca_conn_init();
     if (ret < 0){
-    	IP_VS_CA_ERR("can't setup connection table.\n");
-    	goto cleanup_control;
+        IP_VS_CA_ERR("can't setup connection table.\n");
+        goto cleanup_control;
     }
     IP_VS_CA_DBG("ip_vs_ca_conn_init done.\n");
 
     ret = nf_register_hooks(ip_vs_ca_ops, ARRAY_SIZE(ip_vs_ca_ops));
     if (ret < 0){
-    	IP_VS_CA_ERR("can't register hooks.\n");
-    	goto cleanup_conn;
+        IP_VS_CA_ERR("can't register hooks.\n");
+        goto cleanup_conn;
     }
     IP_VS_CA_DBG("nf_register_hooks done.\n");
 
