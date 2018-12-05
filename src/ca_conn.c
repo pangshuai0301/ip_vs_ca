@@ -5,6 +5,7 @@
  */
 #include <linux/kernel.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/vmalloc.h>
 #include <linux/proc_fs.h>	/* for proc_net_* */
 #include <linux/seq_file.h>
@@ -25,6 +26,12 @@ static atomic_t ip_vs_ca_conn_count = ATOMIC_INIT(0);
 /* random value for IP_VS_CA connection hash */
 static unsigned int ip_vs_ca_conn_rnd;
 
+static int ip_vs_ca_conn_tab_bits = IP_VS_CA_CONN_TAB_BITS;
+static int ip_vs_ca_conn_tab_size = 1 << IP_VS_CA_CONN_TAB_BITS;
+static int ip_vs_ca_conn_tab_mask = IP_VS_CA_CONN_TAB_SIZE - 1;
+
+module_param(ip_vs_ca_conn_tab_bits, int, 0660);
+
 /*
  *  Fine locking granularity for big connection hash table
  */
@@ -32,20 +39,24 @@ static unsigned int ip_vs_ca_conn_rnd;
 #define CT_LOCKARRAY_SIZE  (1<<CT_LOCKARRAY_BITS)
 #define CT_LOCKARRAY_MASK  (CT_LOCKARRAY_SIZE-1)
 
+static int ct_lockarray_bits = CT_LOCKARRAY_BITS;
+static int ct_lockarray_size = 1 << CT_LOCKARRAY_BITS;
+static int ct_lockarray_mask = CT_LOCKARRAY_SIZE - 1;
+
 struct ip_vs_ca_aligned_lock {
     spinlock_t l;
 } __attribute__ ((__aligned__(SMP_CACHE_BYTES)));
 
 /* lock array for conn table */
 static struct ip_vs_ca_aligned_lock
-    __ip_vs_ca_conntbl_lock_array[CT_LOCKARRAY_SIZE] __cacheline_aligned;
+    __ip_vs_ca_conntbl_lock_array[ct_lockarray_size] __cacheline_aligned;
 
 static inline void ct_lock(unsigned key) {
-    spin_lock_bh(&__ip_vs_ca_conntbl_lock_array[key & CT_LOCKARRAY_MASK].l);
+    spin_lock_bh(&__ip_vs_ca_conntbl_lock_array[key & ct_lockarray_mask].l);
 }
 
 static inline void ct_unlock(unsigned key) {
-    spin_unlock_bh(&__ip_vs_ca_conntbl_lock_array[key & CT_LOCKARRAY_MASK].l);
+    spin_unlock_bh(&__ip_vs_ca_conntbl_lock_array[key & ct_lockarray_mask].l);
 }
 
 /*
@@ -58,10 +69,10 @@ static unsigned int ip_vs_ca_conn_hashkey(int af, unsigned proto,
         return jhash_3words(
                     jhash(addr, 16, ip_vs_ca_conn_rnd),
                     (__force u32) port, proto,
-                    ip_vs_ca_conn_rnd) & IP_VS_CA_CONN_TAB_MASK;
+                    ip_vs_ca_conn_rnd) & ip_vs_ca_conn_tab_mask;
 #endif
         return jhash_3words((__force u32) addr->ip, (__force u32) port, proto,
-                    ip_vs_ca_conn_rnd) & IP_VS_CA_CONN_TAB_MASK;
+                    ip_vs_ca_conn_rnd) & ip_vs_ca_conn_tab_mask;
 }
 
 /*
@@ -70,8 +81,8 @@ static unsigned int ip_vs_ca_conn_hashkey(int af, unsigned proto,
 static inline void ct_lock2(unsigned shash, unsigned chash) {
     unsigned slock, clock;
 
-    slock = shash & CT_LOCKARRAY_MASK;
-    clock = chash & CT_LOCKARRAY_MASK;
+    slock = shash & ct_lockarray_size;
+    clock = chash & ct_lockarray_size;
 
     /* lock the conntab bucket */
     if (slock < clock) {
@@ -91,8 +102,8 @@ static inline void ct_lock2(unsigned shash, unsigned chash) {
 static inline void ct_unlock2(unsigned shash, unsigned chash) {
     unsigned slock, clock;
 
-    slock = shash & CT_LOCKARRAY_MASK;
-    clock = chash & CT_LOCKARRAY_MASK;
+    slock = shash & ct_lockarray_mask;
+    clock = chash & ct_lockarray_mask;
 
     /* lock the conntab bucket */
     if (slock < clock) {
@@ -373,7 +384,7 @@ static void ip_vs_ca_conn_flush(void) {
     struct ip_vs_ca_conn *cp;
 
 flush_again:
-    for (idx = 0; idx < IP_VS_CA_CONN_TAB_SIZE; idx++) {
+    for (idx = 0; idx < ip_vs_ca_conn_tab_size; idx++) {
         /*
          *  Lock is actually needed in this loop.
          */
@@ -394,15 +405,26 @@ flush_again:
     }
 }
 
+static void conn_tab_size_init(void) {
+        ip_vs_ca_conn_tab_size = 1 << ip_vs_ca_conn_tab_bits;
+        ip_vs_ca_conn_tab_mask = ip_vs_ca_conn_tab_size - 1;
+
+        ct_lockarray_bits = ip_vs_ca_conn_tab_bits;
+        ct_lockarray_size = 1 << ct_lockarray_bits;
+        ct_lockarray_mask = ct_lockarray_size - 1;
+}
+
 int __init ip_vs_ca_conn_init(void) {
     int idx;
 
-    ip_vs_ca_conn_tab_s = vmalloc(IP_VS_CA_CONN_TAB_SIZE *
+    conn_tab_size_init();
+
+    ip_vs_ca_conn_tab_s = vmalloc(ip_vs_ca_conn_tab_size *
             (sizeof(struct list_head)));
     if (!ip_vs_ca_conn_tab_s)
         return -ENOMEM;
 
-    ip_vs_ca_conn_tab_c = vmalloc(IP_VS_CA_CONN_TAB_SIZE *
+    ip_vs_ca_conn_tab_c = vmalloc(ip_vs_ca_conn_tab_size *
             (sizeof(struct list_head)));
     if (!ip_vs_ca_conn_tab_c)
         return -ENOMEM;
@@ -419,18 +441,18 @@ int __init ip_vs_ca_conn_init(void) {
 
     IP_VS_CA_INFO("Connection hash table configured "
         "(size=%d, memory=%ldKbytes)\n",
-        IP_VS_CA_CONN_TAB_SIZE,
-        (long)(IP_VS_CA_CONN_TAB_SIZE * sizeof(struct list_head)) / 1024);
+        ip_vs_ca_conn_tab_size,
+        (long)(ip_vs_ca_conn_tab_size * sizeof(struct list_head)) / 1024);
 
     IP_VS_CA_DBG("Each connection entry needs %Zd bytes at least\n",
           sizeof(struct ip_vs_ca_conn));
 
-    for (idx = 0; idx < IP_VS_CA_CONN_TAB_SIZE; idx++) {
+    for (idx = 0; idx < ip_vs_ca_conn_tab_size; idx++) {
         INIT_LIST_HEAD(&ip_vs_ca_conn_tab_s[idx]);
         INIT_LIST_HEAD(&ip_vs_ca_conn_tab_c[idx]);
     }
 
-    for (idx = 0; idx < CT_LOCKARRAY_SIZE; idx++) {
+    for (idx = 0; idx < ct_lockarray_size; idx++) {
         spin_lock_init(&__ip_vs_ca_conntbl_lock_array[idx].l);
     }
 
