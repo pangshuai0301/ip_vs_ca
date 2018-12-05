@@ -4,8 +4,8 @@
  * 2016-02-14
  */
 #include <linux/kernel.h>
-#include <linux/module.h>
 #include <linux/moduleparam.h>
+#include <linux/module.h>
 #include <linux/vmalloc.h>
 #include <linux/proc_fs.h>	/* for proc_net_* */
 #include <linux/seq_file.h>
@@ -44,19 +44,52 @@ static int ct_lockarray_size = 1 << CT_LOCKARRAY_BITS;
 static int ct_lockarray_mask = CT_LOCKARRAY_SIZE - 1;
 
 struct ip_vs_ca_aligned_lock {
-    spinlock_t l;
+    rwlock_t l;
 } __attribute__ ((__aligned__(SMP_CACHE_BYTES)));
 
 /* lock array for conn table */
-static struct ip_vs_ca_aligned_lock
-    __ip_vs_ca_conntbl_lock_array[ct_lockarray_size] __cacheline_aligned;
+static struct ip_vs_ca_aligned_lock *__ip_vs_ca_conntbl_lock_array_s;
 
-static inline void ct_lock(unsigned key) {
-    spin_lock_bh(&__ip_vs_ca_conntbl_lock_array[key & ct_lockarray_mask].l);
+static struct ip_vs_ca_aligned_lock *__ip_vs_ca_conntbl_lock_array_c;
+
+static inline void ct_read_lock_bh_s(unsigned key)
+{
+        read_lock_bh(&__ip_vs_ca_conntbl_lock_array_s[key & ct_lockarray_mask].l);
 }
 
-static inline void ct_unlock(unsigned key) {
-    spin_unlock_bh(&__ip_vs_ca_conntbl_lock_array[key & ct_lockarray_mask].l);
+static inline void ct_read_unlock_bh_s(unsigned key)
+{
+        read_unlock_bh(&__ip_vs_ca_conntbl_lock_array_s[key & ct_lockarray_mask].l);
+}
+
+static inline void ct_write_lock_bh_s(unsigned key)
+{
+        write_lock_bh(&__ip_vs_ca_conntbl_lock_array_s[key & ct_lockarray_mask].l);
+}
+
+static inline void ct_write_unlock_bh_s(unsigned key)
+{
+        write_unlock_bh(&__ip_vs_ca_conntbl_lock_array_s[key & ct_lockarray_mask].l);
+}
+
+static inline void ct_read_lock_bh_c(unsigned key)
+{
+        read_lock_bh(&__ip_vs_ca_conntbl_lock_array_c[key & ct_lockarray_mask].l);
+}
+
+static inline void ct_read_unlock_bh_c(unsigned key)
+{
+        read_unlock_bh(&__ip_vs_ca_conntbl_lock_array_c[key & ct_lockarray_mask].l);
+}
+
+static inline void ct_write_lock_bh_c(unsigned key)
+{
+        write_lock_bh(&__ip_vs_ca_conntbl_lock_array_c[key & ct_lockarray_mask].l);
+}
+
+static inline void ct_write_unlock_bh_c(unsigned key)
+{
+        write_unlock_bh(&__ip_vs_ca_conntbl_lock_array_c[key & ct_lockarray_mask].l);
 }
 
 /*
@@ -81,18 +114,18 @@ static unsigned int ip_vs_ca_conn_hashkey(int af, unsigned proto,
 static inline void ct_lock2(unsigned shash, unsigned chash) {
     unsigned slock, clock;
 
-    slock = shash & ct_lockarray_size;
-    clock = chash & ct_lockarray_size;
+    slock = shash & ct_lockarray_mask;
+    clock = chash & ct_lockarray_mask;
 
     /* lock the conntab bucket */
     if (slock < clock) {
-        ct_lock(shash);
-        ct_lock(chash);
+        ct_write_lock_bh_s(shash);
+        ct_write_lock_bh_c(chash);
     } else if (slock > clock) {
-        ct_lock(chash);
-        ct_lock(shash);
+        ct_write_lock_bh_c(chash);
+        ct_write_lock_bh_s(shash);
     } else {
-        ct_lock(shash);
+        ct_write_lock_bh_s(shash);
     }
 }
 
@@ -107,13 +140,13 @@ static inline void ct_unlock2(unsigned shash, unsigned chash) {
 
     /* lock the conntab bucket */
     if (slock < clock) {
-        ct_unlock(chash);
-        ct_unlock(shash);
+        ct_write_unlock_bh_c(chash);
+        ct_write_unlock_bh_s(shash);
     } else if (slock > clock) {
-        ct_unlock(shash);
-        ct_unlock(chash);
+        ct_write_unlock_bh_s(shash);
+        ct_write_unlock_bh_c(chash);
     } else {
-        ct_unlock(shash);
+        ct_write_unlock_bh_c(shash);
     }
 }
 
@@ -332,9 +365,8 @@ ip_vs_ca_conn_get(int af, __u8 protocol, const union nf_inet_addr *addr,
 
     hash = ip_vs_ca_conn_hashkey(af, protocol, addr, port);
 
-    ct_lock(hash);
-
     if (dir == IP_VS_CA_IN) {
+	ct_read_lock_bh_s(hash);
         list_for_each_entry(cp, &ip_vs_ca_conn_tab_s[hash], s_list) {
             if (cp->af == af &&
                 ip_vs_ca_addr_equal(af, addr, &cp->s_addr) &&
@@ -342,11 +374,13 @@ ip_vs_ca_conn_get(int af, __u8 protocol, const union nf_inet_addr *addr,
                 protocol == cp->protocol) {
                     /* HIT */
                     atomic_inc(&cp->refcnt);
-                    ct_unlock(hash);
+		    ct_read_unlock_bh_s(hash);
                     return cp;
     	    }
     	}
+	ct_read_unlock_bh_s(hash);
     } else {
+	ct_read_lock_bh_c(hash);
         list_for_each_entry(cp, &ip_vs_ca_conn_tab_c[hash], c_list) {
             if (cp->af == af &&
                 ip_vs_ca_addr_equal(af, addr, &cp->c_addr) &&
@@ -354,12 +388,12 @@ ip_vs_ca_conn_get(int af, __u8 protocol, const union nf_inet_addr *addr,
                 protocol == cp->protocol) {
                     /* HIT */
                     atomic_inc(&cp->refcnt);
-                    ct_unlock(hash);
+		    ct_read_unlock_bh_c(hash);
                     return cp;
             }
         }
+	ct_read_unlock_bh_c(hash);
     }
-    ct_unlock(hash);
     return NULL;
 }
 
@@ -388,13 +422,13 @@ flush_again:
         /*
          *  Lock is actually needed in this loop.
          */
-        ct_lock(idx);
+        ct_write_lock_bh_s(idx);
 
         list_for_each_entry(cp, &ip_vs_ca_conn_tab_s[idx], s_list) {
             IP_VS_CA_DBG("del connection\n");
             ip_vs_ca_conn_expire_now(cp);
         }
-        ct_unlock(idx);
+        ct_write_unlock_bh_s(idx);
     }
 
     /* the counter may be not NULL, because maybe some conn entries
@@ -429,6 +463,15 @@ int __init ip_vs_ca_conn_init(void) {
     if (!ip_vs_ca_conn_tab_c)
         return -ENOMEM;
 
+    __ip_vs_ca_conntbl_lock_array_s = vmalloc(ct_lockarray_size *
+            (sizeof(struct ip_vs_ca_aligned_lock)));
+    if (!__ip_vs_ca_conntbl_lock_array_s)
+        return -ENOMEM;
+    __ip_vs_ca_conntbl_lock_array_c = vmalloc(ct_lockarray_size *
+            (sizeof(struct ip_vs_ca_aligned_lock)));
+    if (!__ip_vs_ca_conntbl_lock_array_c)
+        return -ENOMEM;
+
     /* Allocate ip_vs_ca_conn slab cache */
     ip_vs_ca_conn_cachep = kmem_cache_create("ip_vs_ca_conn",
                             sizeof(struct ip_vs_ca_conn),
@@ -453,8 +496,10 @@ int __init ip_vs_ca_conn_init(void) {
     }
 
     for (idx = 0; idx < ct_lockarray_size; idx++) {
-        spin_lock_init(&__ip_vs_ca_conntbl_lock_array[idx].l);
+        rwlock_init(&__ip_vs_ca_conntbl_lock_array_s[idx].l);
+        rwlock_init(&__ip_vs_ca_conntbl_lock_array_c[idx].l);
     }
+    IP_VS_CA_INFO("Connection table lock array configured (size=%d)\n", ct_lockarray_size);
 
     /* calculate the random value for connection hash */
     get_random_bytes(&ip_vs_ca_conn_rnd, sizeof(ip_vs_ca_conn_rnd));
