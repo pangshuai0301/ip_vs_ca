@@ -651,48 +651,48 @@ static int __init ip_vs_ca_init(void)
 {
     int ret;
 
-    ret = ip_vs_ca_syscall_init();
-    if (ret < 0){
-        IP_VS_CA_ERR("can't modify syscall table.\n");
-        goto out_err;
-    }
-    IP_VS_CA_DBG("modify syscall table done.\n");
-
     ip_vs_ca_protocol_init();
     IP_VS_CA_DBG("ip_vs_ca_protocol_init done.\n");
 
     ret = ip_vs_ca_control_init();
     if (ret < 0){
-        IP_VS_CA_ERR("can't modify syscall table.\n");
-        goto cleanup_syscall;
+            IP_VS_CA_ERR("can't modify syscall table.\n");
+            goto out_err;
     }
     IP_VS_CA_DBG("ip_vs_ca_control_init done.\n");
 
     ret = ip_vs_ca_conn_init();
     if (ret < 0){
-        IP_VS_CA_ERR("can't setup connection table.\n");
-        goto cleanup_control;
+            IP_VS_CA_ERR("can't setup connection table.\n");
+            goto cleanup_control;
     }
     IP_VS_CA_DBG("ip_vs_ca_conn_init done.\n");
 
     ret = nf_register_hooks(ip_vs_ca_ops, ARRAY_SIZE(ip_vs_ca_ops));
     if (ret < 0){
-        IP_VS_CA_ERR("can't register hooks.\n");
-        goto cleanup_conn;
+            IP_VS_CA_ERR("can't register hooks.\n");
+            goto cleanup_conn;
     }
     IP_VS_CA_DBG("nf_register_hooks done.\n");
+
+    ret = ip_vs_ca_syscall_init();
+    if (ret < 0){
+            IP_VS_CA_ERR("can't modify syscall table.\n");
+            goto cleanup_nf_hooks;
+    }
+    IP_VS_CA_DBG("modify syscall table done.\n");
 
     IP_VS_CA_INFO("ip_vs_ca loaded.");
     return ret;
 
+cleanup_nf_hooks:
+        nf_unregister_hooks(ip_vs_ca_ops, ARRAY_SIZE(ip_vs_ca_ops));
 cleanup_conn:
-    ip_vs_ca_conn_cleanup();
+        ip_vs_ca_conn_cleanup();
 cleanup_control:
-    ip_vs_ca_control_cleanup();
-cleanup_syscall:
-    ip_vs_ca_syscall_cleanup();
+        ip_vs_ca_control_cleanup();
 out_err:
-    return ret;
+        return ret;
 }
 
 static void __exit ip_vs_ca_exit(void)
