@@ -512,4 +512,6 @@ void ip_vs_ca_conn_cleanup(void) {
     kmem_cache_destroy(ip_vs_ca_conn_cachep);
     vfree(ip_vs_ca_conn_tab_s);
     vfree(ip_vs_ca_conn_tab_c);
+    vfree(__ip_vs_ca_conntbl_lock_array_s);
+    vfree(__ip_vs_ca_conntbl_lock_array_c);
 }
