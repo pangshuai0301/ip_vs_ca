@@ -697,11 +697,11 @@ out_err:
 
 static void __exit ip_vs_ca_exit(void)
 {
+    ip_vs_ca_syscall_cleanup();
+    ip_vs_ca_control_cleanup();
     nf_unregister_hooks(ip_vs_ca_ops, ARRAY_SIZE(ip_vs_ca_ops));
     ip_vs_ca_conn_cleanup();
     ip_vs_ca_protocol_cleanup();
-    ip_vs_ca_control_cleanup();
-    ip_vs_ca_syscall_cleanup();
     IP_VS_CA_INFO("ip_vs_ca unloaded.");
 }
 
